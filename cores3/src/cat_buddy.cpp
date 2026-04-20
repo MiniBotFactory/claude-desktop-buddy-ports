@@ -85,6 +85,34 @@ static const CrownStyle CROWN_STYLES[4] = {
   { 0xF800, 0x03E0, 0xFA00, 0x0420,  150, 2,  200, true },
 };
 
+// Each species' head occupies a different column range in its 12-char
+// pose string, so a single crown layout doesn't sit correctly on every
+// pet. Baked table: x offset applied on top of the base "center at col 5"
+// crown so the flowers line up with the pet's actual head midpoint.
+//
+// Example measurements (col = 0-indexed, textSize 2 → 12 px per col):
+//   cat "   /\_/\    "    head cols 3..7   → col 5   → offset 0
+//   owl "   /\  /\   "    head cols 3..10  → col 6.5 → offset +18
+//   duck "    __     "    head cols 4..5   → col 4.5 → offset -6
+//   penguin ".---."       head cols 3..7   → col 5   → offset 0
+//   rabbit "    (\_/)"    head cols 4..8   → col 6   → offset +12
+//   dragon "/^\  /^\"     head cols 2..9   → col 5.5 → offset +6
+//   ghost ".----."        head cols 3..8   → col 5.5 → offset +6
+//   robot "[____]"        head cols 3..8   → col 5.5 → offset +6
+static int crownXOffset(void) {
+  switch (buddyGetKind()) {
+    case BUDDY_OWL:     return 18;
+    case BUDDY_DUCK:    return -6;
+    case BUDDY_RABBIT:  return 12;
+    case BUDDY_DRAGON:  return 6;
+    case BUDDY_GHOST:   return 6;
+    case BUDDY_ROBOT:   return 6;
+    case BUDDY_CAT:
+    case BUDDY_PENGUIN:
+    default:            return 0;
+  }
+}
+
 static void drawCrown(M5Canvas* c, uint32_t t, Persona p) {
   const CrownStyle& s = CROWN_STYLES[p];
 
@@ -118,7 +146,7 @@ static void drawCrown(M5Canvas* c, uint32_t t, Persona p) {
       c->setTextSize(2);
     }
     int y = CROWN_Y_BASE + bob + (IS_FLOWER[i] ? 0 : 2);
-    c->setCursor(24 + i * 18, y);
+    c->setCursor(24 + crownXOffset() + i * 18, y);
     char str[2] = { GLYPH[i], 0 };
     c->print(str);
   }

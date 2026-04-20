@@ -446,7 +446,7 @@ static void drawIdleScreen(Persona p, uint32_t now) {
   // Pet region: draw cat into its own sprite, then push at (4, 30)
   petCanvas.fillSprite(TFT_BLACK);
   catDrawFrame(&petCanvas, p, now);
-  petCanvas.pushSprite(&frame, 4, 32);
+  petCanvas.pushSprite(&frame, 4, 28);
 
   // Flash the buddy name briefly after the user double-taps to switch.
   if (millis() < buddyNameFlashUntil) {
@@ -564,7 +564,7 @@ static void drawPromptScreen(Persona p, uint32_t now) {
   // cat perks up and the crown turns urgent red.
   petCanvas.fillSprite(TFT_BLACK);
   catDrawFrame(&petCanvas, p, now);
-  petCanvas.pushSprite(&frame, 4, 32);
+  petCanvas.pushSprite(&frame, 4, 28);
 
   // Right panel (160..320, 30..140): tool name + hint, replacing stats
   const int rx = 160, ry = 36;
