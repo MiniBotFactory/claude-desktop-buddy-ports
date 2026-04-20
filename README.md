@@ -16,7 +16,7 @@ Each device gets its own subdirectory with a self-contained PlatformIO project.
 |---|---|---|---|
 | [`cores3/`](cores3/) | **M5Stack CoreS3** — 2.0″ 320×240 touchscreen + speaker + IMU | Desktop device, ~¥500 | ✅ **Stable v1.0** |
 | [`atoms3r-echo/`](atoms3r-echo/) | **M5Stack AtomS3R + Atom Echo Base** — 0.85″ 128×128, 1 button, speaker + mic | Magnetic monitor-edge clip, ~¥150 | ✅ **v0.1 verified** |
-| [`zectrix-note4/`](zectrix-note4/) | **ZecTrix Note 4** — 4.2″ e-paper 400×300 + 3 buttons + speaker + mic | Always-on desk dashboard | ⚗️ **v0.1 — builds, not yet hardware-validated** |
+| [`zectrix-note4/`](zectrix-note4/) | **ZecTrix Note 4** — 4.2″ e-paper 400×300 + 3 buttons + speaker + mic | Always-on desk dashboard | ✅ **v0.1.3 verified** |
 
 Pick the one that matches your hardware, `cd` into the folder, and follow the README there.
 

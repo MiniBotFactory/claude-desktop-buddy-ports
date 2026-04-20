@@ -2,7 +2,7 @@
 
 The e-paper variant of the Hardware Buddy. Turns a [ZecTrix Note 4](https://wiki.zectrix.com/zh/hardware/intro) "AI 便利贴" into a monochrome dashboard that mirrors Claude Desktop session state and takes Allow/Deny decisions with the device's physical buttons.
 
-> ⚗️ **v0.1 — compiles, needs hardware validation.** BLE + EPD logic is written; a real Note 4 hasn't touched this firmware yet. See the [TODO list](#todo) at the bottom.
+> ✅ **v0.1.3 — hardware-verified.** Pairing (6-digit passkey on e-paper), dashboard rendering, full prompt flow (short-click Allow / long-hold Deny) all working on a real Note 4. Known limitations remain in the [TODO list](#todo) — audio, partial refresh, and deep sleep are still unimplemented.
 
 ---
 
