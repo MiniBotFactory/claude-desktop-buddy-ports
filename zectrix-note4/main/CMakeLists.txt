@@ -6,12 +6,15 @@ idf_component_register(
         "ui_paint.c"
         "buttons.c"
         "proto.cc"
+        "speaker.c"
     INCLUDE_DIRS "."
     REQUIRES
         driver
         spi_flash
         esp_driver_spi
         esp_driver_gpio
+        esp_driver_i2s
+        esp_driver_i2c
         nvs_flash
         bt
         esp_timer

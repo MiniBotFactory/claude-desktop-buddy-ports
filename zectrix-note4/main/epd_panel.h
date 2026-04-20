@@ -32,7 +32,21 @@ void epd_clear_white(void);
 
 // Push `fb` (must be EPD_FRAMEBUF_BYTES long) to the panel and trigger a
 // full-screen refresh. Blocks until the BUSY line releases (~1.5 s).
+// SSD2683 always uses the full black-to-white-to-target sequence here
+// ("flash refresh"), so the screen appears to invert briefly — the
+// trade-off is zero ghosting. Prefer epd_partial_refresh for frequent
+// state-change updates (dashboard counter ticks, etc.).
 void epd_full_refresh(const uint8_t *fb);
+
+// Push `fb` and trigger a partial-area refresh based on the diff against
+// the last frame sent. Only pixels that actually changed flip, so there
+// is no black-white flash. After many partial refreshes residual ghosting
+// can build up — callers should periodically force a full refresh
+// (roughly every 10-20 partial updates) to clear it. Blocks ~600-900 ms.
+//
+// Falls back to a full refresh automatically the very first call (no
+// previous frame exists) or if internal allocation fails.
+void epd_partial_refresh(const uint8_t *fb);
 
 // Put the panel into deep sleep (call before app sleep to save the ~50 µA
 // panel standby current).

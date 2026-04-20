@@ -17,11 +17,16 @@
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 
 static const char *TAG = "epd";
 
 static spi_device_handle_t s_spi = NULL;
 static bool s_bus_inited = false;
+
+// Previous frame, kept only for partial refresh. Allocated in PSRAM on
+// first partial call. If NULL, epd_partial_refresh falls back to full.
+static uint8_t *s_prev_fb = NULL;
 
 // ---------- tiny GPIO helpers -----------------------------------------------
 static inline void set_cs(int level)  { gpio_set_level(EPD_CS_PIN,  level); }
@@ -210,6 +215,21 @@ static void epd_turn_on_display(void) {
     epd_power_off();
 }
 
+// Ensure prev_buffer exists and contains a copy of `fb`. Used at the end
+// of every refresh so the next partial refresh has something to diff
+// against. PSRAM-backed — 15 KB internal would fit too but PSRAM is
+// plentiful and framebuffers are naturally PSRAM-friendly.
+static void update_prev_buffer(const uint8_t *fb) {
+    if (!s_prev_fb) {
+        s_prev_fb = heap_caps_malloc(EPD_FRAMEBUF_BYTES,
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_prev_fb) {
+            s_prev_fb = heap_caps_malloc(EPD_FRAMEBUF_BYTES, MALLOC_CAP_8BIT);
+        }
+    }
+    if (s_prev_fb) memcpy(s_prev_fb, fb, EPD_FRAMEBUF_BYTES);
+}
+
 void epd_full_refresh(const uint8_t *fb) {
     if (!fb) return;
 
@@ -257,4 +277,71 @@ void epd_full_refresh(const uint8_t *fb) {
     }
 
     epd_turn_on_display();
+    update_prev_buffer(fb);
+}
+
+// Partial refresh: pack prev + new frame bits together (2 bits per source
+// pixel: high = prev, low = new). SSD2683 computes the diff internally
+// and only updates pixels that actually changed, skipping the flash cycle.
+void epd_partial_refresh(const uint8_t *fb) {
+    if (!fb) return;
+    if (!s_prev_fb) {
+        // First refresh ever — no baseline to diff, do a full.
+        epd_full_refresh(fb);
+        return;
+    }
+
+    epd_wake_and_init();
+
+    // Temperature compensation (same table as full). SSD2683 appears to
+    // accept partial updates without the 0xE0/0xE6/0xA5 block, but the
+    // reference driver re-sends it so ghosting stays consistent — do the
+    // same.
+    epd_send_cmd(0x40);
+    read_busy();
+    uint8_t temp1 = epd_recv_data();
+    uint8_t tempvalue;
+    if      (temp1 <=   5) tempvalue = 232;
+    else if (temp1 <=  10) tempvalue = 235;
+    else if (temp1 <=  20) tempvalue = 238;
+    else if (temp1 <=  30) tempvalue = 241;
+    else if (temp1 <= 127) tempvalue = 244;
+    else                    tempvalue = 232;
+    epd_send_cmd(0xE0); epd_send_data(0x02);
+    epd_send_cmd(0xE6); epd_send_data(tempvalue);
+    epd_send_cmd(0xA5);
+    read_busy();
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    epd_send_cmd(0x10);
+    read_busy();
+
+    // Each row: interleave bits so that bit 2k   = new[bit k] and
+    //                                   bit 2k+1 = prev[bit k].
+    // This matches the reference EPD_DisplayPart exactly.
+    const int bytes_per_row = EPD_1BPP_STRIDE;      // 50
+    uint8_t line[EPD_1BPP_STRIDE * 2];
+    for (int y = 0; y < EPD_HEIGHT; y++) {
+        const uint8_t *prev_row = s_prev_fb + y * bytes_per_row;
+        const uint8_t *new_row  = fb        + y * bytes_per_row;
+
+        for (int j = 0; j < bytes_per_row; j++) {
+            uint8_t pb = prev_row[j];
+            uint8_t nb = new_row[j];
+            uint16_t result = 0;
+            for (int k = 0; k < 8; k++) {
+                int src_bit  = 7 - k;
+                int dst_bit0 = 2 * src_bit;       // even bit = new frame
+                int dst_bit1 = 2 * src_bit + 1;   // odd  bit = prev frame
+                result |= ((uint16_t)((pb >> src_bit) & 1u)) << dst_bit1;
+                result |= ((uint16_t)((nb >> src_bit) & 1u)) << dst_bit0;
+            }
+            line[2 * j + 0] = (uint8_t)(result >> 8);
+            line[2 * j + 1] = (uint8_t)(result & 0xFF);
+        }
+        epd_write_bytes(line, EPD_1BPP_STRIDE * 2);
+    }
+
+    epd_turn_on_display();
+    update_prev_buffer(fb);
 }

@@ -35,6 +35,7 @@
 #include "ui_paint.h"
 #include "buttons.h"
 #include "proto.h"
+#include "speaker.h"
 
 static const char *TAG = "buddy";
 
@@ -76,6 +77,16 @@ static void send_permission(const char *id, const char *decision) {
 }
 
 // ---- Rendering --------------------------------------------------------------
+//
+// Each render_* function paints into the framebuffer only. The main loop
+// decides whether to present that frame via epd_full_refresh (slow,
+// "flash" black-white-target cycle, clears any ghosting) or
+// epd_partial_refresh (fast, no flash, only changed pixels flip — but
+// ghosts accumulate over time). Rule of thumb applied below:
+//
+//   - Screen-type change (dashboard → prompt, etc.) → FULL.
+//   - Same screen type, state tick (counter bump)   → PARTIAL.
+//   - Every ~15 partial refreshes                   → FULL (anti-ghost).
 
 static void render_pairing(uint32_t pk) {
     ui_clear(true);                                      // white background
@@ -87,7 +98,6 @@ static void render_pairing(uint32_t pk) {
     snprintf(buf, sizeof(buf), "%06lu", (unsigned long)pk);
     ui_text_center(200, 150, buf, 6);                     // big 6-digit passkey
     ui_text_center(200, 240, "Type this on the desktop dialog", 2);
-    epd_full_refresh(ui_framebuf());
 }
 
 static const char *persona_label(persona_t p) {
@@ -139,8 +149,6 @@ static void render_dashboard(void) {
 
     // Footer
     ui_text(40, 275, "zectrix note 4", 1);
-
-    epd_full_refresh(ui_framebuf());
 }
 
 static void render_prompt(uint32_t hold_pct) {
@@ -170,7 +178,6 @@ static void render_prompt(uint32_t hold_pct) {
     }
 
     ui_text(40, 275, "button: front=confirm  sides=later", 1);
-    epd_full_refresh(ui_framebuf());
 }
 
 // ---- Main loop --------------------------------------------------------------
@@ -209,6 +216,9 @@ extern "C" void app_main(void) {
 
     buttons_init();
 
+    // Audio is non-critical; if it fails to bring up the firmware still runs.
+    (void)speaker_init();
+
     // Build our BLE name from the MAC's last 4 hex so duplicates are
     // distinguishable (same pattern as the CoreS3/AtomS3R ports).
     uint8_t mac[6];
@@ -232,6 +242,8 @@ extern "C" void app_main(void) {
             g_last_prompt_id[sizeof(g_last_prompt_id) - 1] = 0;
             g_last_replied_id[0] = 0;
             ESP_LOGI(TAG, "[prompt] %s %s", g_snap.prompt_tool, g_snap.prompt_hint);
+            // Audible notification so the user doesn't have to watch the screen.
+            speaker_ding();
         }
         if (!has_prompt) { g_last_prompt_id[0] = 0; g_last_replied_id[0] = 0; }
 
@@ -241,9 +253,11 @@ extern "C" void app_main(void) {
             if (e == BTN_CONFIRM_CLICK &&
                 strcmp(g_snap.prompt_id, g_last_replied_id) != 0) {
                 send_permission(g_snap.prompt_id, "once");
+                speaker_allow();
             } else if (e == BTN_CONFIRM_LONG &&
                        strcmp(g_snap.prompt_id, g_last_replied_id) != 0) {
                 send_permission(g_snap.prompt_id, "deny");
+                speaker_deny();
             }
         }
 
@@ -268,17 +282,45 @@ extern "C" void app_main(void) {
         }
 
         if (redraw) {
-            if (pk) {
+            // Which screen this redraw is for. Screen transitions require
+            // a full flash refresh to scrub ghosting between very different
+            // layouts; same-screen updates can go partial for no flicker.
+            enum { SC_NONE, SC_PAIRING, SC_PROMPT, SC_DASHBOARD } sc;
+            if (pk)            sc = SC_PAIRING;
+            else if (has_prompt) sc = SC_PROMPT;
+            else                 sc = SC_DASHBOARD;
+
+            if (sc == SC_PAIRING) {
                 render_pairing(pk);
-            } else if (has_prompt) {
+            } else if (sc == SC_PROMPT) {
                 uint32_t pct = 0;
                 if (buttons_confirm_held()) {
-                    pct = (hold_ms * 100) / 1200;  // 1200 = LONG_MIN_MS
+                    pct = (hold_ms * 100) / 2500;  // LONG_MIN_MS
                     if (pct > 100) pct = 100;
                 }
                 render_prompt(pct);
             } else {
                 render_dashboard();
+            }
+
+            static int partial_streak = 0;
+
+            // Default to partial. The SSD2683's full refresh is the source
+            // of the black-white-target flash that users read as a
+            // "negative flip"; partial only flips the pixels that changed,
+            // so transitions feel like a smooth wipe instead of a strobe.
+            // We still force full when:
+            //   - It's the pairing passkey screen (clarity critical)
+            //   - We've done too many partials in a row (ghost buildup)
+            bool need_full = (sc == SC_PAIRING)
+                          || (partial_streak >= 30);
+
+            if (need_full) {
+                epd_full_refresh(ui_framebuf());
+                partial_streak = 0;
+            } else {
+                epd_partial_refresh(ui_framebuf());
+                partial_streak++;
             }
         }
 

@@ -1,0 +1,8 @@
+dependencies:
+  # ES8311 codec driver + abstract I2S data interface.
+  # Pulls in esp_codec_dev, esp_codec_dev_defaults, driver/i2c_master,
+  # driver/i2s (already bundled), etc.
+  espressif/esp_codec_dev: "~1.3.3"
+
+  idf:
+    version: ">=5.0"
