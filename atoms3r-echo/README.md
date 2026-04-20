@@ -2,7 +2,7 @@
 
 A tiny magnetic clip-to-your-monitor companion for Claude Desktop. 24×24 mm device, 128×128 display used as a coloured status lamp, single-button Allow/Deny, full audio feedback via the Echo Base speaker.
 
-> 🧪 **v0.1 — compiles, not yet hardware-validated.** Logic is ported from the CoreS3 build; the display/input layer is new. If you build it and something doesn't work, open an issue.
+> ✅ **v0.1 — verified on hardware.** Short-click Allow, long-hold Deny with cancellable countdown, and the pairing screen are all confirmed working. Audio through the Echo Base speaker works.
 
 ---
 

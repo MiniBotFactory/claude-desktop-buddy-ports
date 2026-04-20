@@ -15,7 +15,7 @@ Each device gets its own subdirectory with a self-contained PlatformIO project.
 | Folder | Hardware | Form factor | Status |
 |---|---|---|---|
 | [`cores3/`](cores3/) | **M5Stack CoreS3** — 2.0″ 320×240 touchscreen + speaker + IMU | Desktop device, ~¥500 | ✅ **Stable v1.0** |
-| [`atoms3r-echo/`](atoms3r-echo/) | **M5Stack AtomS3R + Atom Echo Base** — 0.85″ 128×128, 1 button, speaker + mic | Magnetic monitor-edge clip, ~¥150 | 🚧 Planned |
+| [`atoms3r-echo/`](atoms3r-echo/) | **M5Stack AtomS3R + Atom Echo Base** — 0.85″ 128×128, 1 button, speaker + mic | Magnetic monitor-edge clip, ~¥150 | ✅ **v0.1 verified** |
 
 Pick the one that matches your hardware, `cd` into the folder, and follow the README there.
 
