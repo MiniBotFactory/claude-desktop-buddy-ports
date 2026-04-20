@@ -1,0 +1,19 @@
+idf_component_register(
+    SRCS
+        "main.cc"
+        "epd_panel.c"
+        "ble_nus.c"
+        "ui_paint.c"
+        "buttons.c"
+        "proto.cc"
+    INCLUDE_DIRS "."
+    REQUIRES
+        driver
+        spi_flash
+        esp_driver_spi
+        esp_driver_gpio
+        nvs_flash
+        bt
+        esp_timer
+        json
+)
