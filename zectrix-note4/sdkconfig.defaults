@@ -23,6 +23,12 @@ CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
 CONFIG_BT_NIMBLE_SM_LEGACY=y
 CONFIG_BT_NIMBLE_SM_SC=y
 
+# Persist bond records (LTK, IRK) in NVS so the device remembers paired
+# centrals across reboots. Without this the device forgets every bond on
+# power cycle and macOS's stored bond causes immediate "Remote User
+# Terminated" (HCI 0x13 / NimBLE reason=531) on reconnect.
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+
 # --- FreeRTOS tick = 1000 Hz so millis-style timing is clean ---
 CONFIG_FREERTOS_HZ=1000
 

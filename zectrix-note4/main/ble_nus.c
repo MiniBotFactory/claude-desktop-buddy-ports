@@ -24,6 +24,11 @@
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
 
+// From components/bt/host/nimble/nimble/nimble/host/store/config/include/ —
+// provides ble_store_config_init() which wires the default NVS-backed
+// persistent bond store into ble_hs_cfg.store_* callbacks.
+extern void ble_store_config_init(void);
+
 static const char *TAG = "ble";
 
 // Nordic UART Service UUIDs.
@@ -284,6 +289,11 @@ void ble_nus_init(const char *device_name) {
     ESP_ERROR_CHECK(ble_gatts_count_cfg(gatt_svcs));
     ESP_ERROR_CHECK(ble_gatts_add_svcs(gatt_svcs));
     ble_svc_gap_device_name_set(s_name);
+
+    // Hook the NVS-backed persistent store so LTKs / IRKs survive reboot.
+    // Without this, bonds only live in RAM and any re-pair after a reset
+    // fails with reason=531 (remote terminated — encryption mismatch).
+    ble_store_config_init();
 
     // Tap every GAP event through our handler once connections arrive.
     // NimBLE requires passing the callback at advertising start (see advertise()),
