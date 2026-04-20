@@ -169,7 +169,99 @@ static void doAttention(M5Canvas* c, uint32_t t) {
   drawCrown(c, t, P_ATTENTION);
 }
 
+// ============================================================================
+// Owl buddy — poses ported from upstream/src/buddies/owl.cpp. Same crown +
+// drawPose/particle helpers as the cat so behaviour matches.
+// ============================================================================
+
+namespace owl {
+static constexpr uint16_t OWL_BODY = 0x8430;  // muted brown-grey
+
+static void doSleep(M5Canvas* c, uint32_t t) {
+  static const char* const TUCK[5]   = { "            ", "   .-..-.   ", "  ( -  - )  ", "  (  __  )  ", "   `----'   " };
+  static const char* const PUFF[5]   = { "    .--.    ", "   /-..-\\   ", "  ( -  - )  ", "  (  __  )  ", "   `----'   " };
+  static const char* const DEEP[5]   = { "    .--.    ", "   /-..-\\   ", "  ( _  _ )  ", "  (  ZZ  )  ", "   `----'   " };
+  static const char* const HEAD_L[5] = { "            ", "   .-..-.   ", " ( -  -  )  ", "  (  __  )  ", "   `----'   " };
+  static const char* const HEAD_R[5] = { "            ", "   .-..-.   ", "  (  - - -) ", "  (  __  )  ", "   `----'   " };
+  const char* const* seq[] = { TUCK, PUFF, DEEP, HEAD_L, DEEP, HEAD_R };
+  uint8_t beat = (t / 800) % 6;
+  drawPose(c, seq[beat], OWL_BODY);
+  int p = (t / 200) % 10;
+  particle(c, 110 + p, 16 - p, "z", CAT_DIM);
+  particle(c, 120 + p / 2, 8 - p / 2, "Z", CAT_WHITE);
+}
+
+static void doIdle(M5Canvas* c, uint32_t t) {
+  static const char* const REST[5]   = { "            ", "   /\\  /\\   ", "  ((O)(O))  ", "  (  ><  )  ", "   `----'   " };
+  static const char* const BLINK[5]  = { "            ", "   /\\  /\\   ", "  ((-)(-))  ", "  (  ><  )  ", "   `----'   " };
+  static const char* const LOOK_L[5] = { "            ", "   /\\  /\\   ", "  ((O)(O))  ", " (  ><   )  ", "   `----'   " };
+  static const char* const LOOK_R[5] = { "            ", "   /\\  /\\   ", "  ((O)(O))  ", "  (  ><  ) ", "   `----'   " };
+  static const char* const WINK[5]   = { "            ", "   /\\  /\\   ", "  ((O)(-))  ", "  (  ><  )  ", "   `----'   " };
+  const char* const* seq[] = { REST, REST, BLINK, REST, LOOK_L, REST, LOOK_R, REST, WINK, REST };
+  uint8_t beat = (t / 700) % 10;
+  drawPose(c, seq[beat], OWL_BODY);
+  drawCrown(c, t, P_IDLE);
+}
+
+static void doBusy(M5Canvas* c, uint32_t t) {
+  static const char* const SCROLL[5] = { "    [___]   ", "   /\\  /\\   ", "  ((v)(v))  ", "  (  --  )  ", "   `----'   " };
+  static const char* const PECK_A[5] = { "    [___]   ", "   /\\  /\\   ", "  ((v)(v))  ", "  (  >>  )  ", "   `----'   " };
+  static const char* const PECK_B[5] = { "    [___]   ", "   /\\  /\\   ", "  ((v)(v))  ", "  (  <<  )  ", "   `----'   " };
+  static const char* const PONDER[5] = { "      ?     ", "   /\\  /\\   ", "  ((^)(^))  ", "  (  ..  )  ", "   `----'   " };
+  const char* const* seq[] = { SCROLL, PECK_A, PECK_B, PECK_A, PONDER, SCROLL };
+  uint8_t beat = (t / 400) % 6;
+  drawPose(c, seq[beat], OWL_BODY);
+  static const char* const DOTS[] = { ".  ", ".. ", "...", " ..", "  .", "   " };
+  particle(c, 110, 28, DOTS[(t / 150) % 6], CAT_WHITE);
+  drawCrown(c, t, P_BUSY);
+}
+
+static void doAttention(M5Canvas* c, uint32_t t) {
+  static const char* const ALERT[5]  = { "            ", "  /^\\  /^\\  ", " ((O))((O)) ", " (   ><   ) ", "  `------'  " };
+  static const char* const SCAN_L[5] = { "            ", "  /^\\  /^\\  ", "((O))((O))  ", " (   ><   ) ", "  `------'  " };
+  static const char* const SCAN_R[5] = { "            ", "  /^\\  /^\\  ", "  ((O))((O))", " (   ><   ) ", "  `------'  " };
+  static const char* const GLARE[5]  = { "            ", "  /^\\  /^\\  ", " ((-))((-)) ", " (   ><   ) ", "  `------'  " };
+  const char* const* seq[] = { ALERT, SCAN_L, ALERT, SCAN_R, GLARE, ALERT };
+  uint8_t beat = (t / 300) % 6;
+  int jitter = (t / 100) & 1 ? 1 : -1;
+  drawPose(c, seq[beat], OWL_BODY, jitter, 0);
+  if ((t / 200) & 1) particle(c, 50, -4, "!", CAT_YEL);
+  if ((t / 300) & 1) particle(c, 78, -4, "!", CAT_YEL);
+  drawCrown(c, t, P_ATTENTION);
+}
+} // namespace owl
+
+// ============================================================================
+// Dispatch
+// ============================================================================
+
+static BuddyKind g_kind = BUDDY_CAT;
+
+void buddySetKind(BuddyKind k) {
+  if (k >= BUDDY_COUNT) k = BUDDY_CAT;
+  g_kind = k;
+}
+BuddyKind buddyGetKind(void) { return g_kind; }
+
+const char *buddyKindName(BuddyKind k) {
+  switch (k) {
+    case BUDDY_CAT: return "cat";
+    case BUDDY_OWL: return "owl";
+    default:        return "?";
+  }
+}
+
 void catDrawFrame(M5Canvas* canvas, Persona p, uint32_t tickMs) {
+  if (g_kind == BUDDY_OWL) {
+    switch (p) {
+      case P_SLEEP:     owl::doSleep(canvas, tickMs); break;
+      case P_IDLE:      owl::doIdle(canvas, tickMs); break;
+      case P_BUSY:      owl::doBusy(canvas, tickMs); break;
+      case P_ATTENTION: owl::doAttention(canvas, tickMs); break;
+    }
+    return;
+  }
+  // Default: cat
   switch (p) {
     case P_SLEEP:     doSleep(canvas, tickMs); break;
     case P_IDLE:      doIdle(canvas, tickMs); break;

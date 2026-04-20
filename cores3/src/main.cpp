@@ -46,6 +46,10 @@ static Snapshot snap;
 static char lastRepliedId[48] = {0};
 static char lastPromptId[48]  = {0};
 
+// Owner's first name as sent by Claude Desktop. Used to greet the user
+// on the idle screen. Empty until the first {"cmd":"owner",...} arrives.
+static char ownerName[32] = {0};
+
 // ---------- BLE RX line assembly --------------------------------------------
 static char   lineBuf[1536];
 static size_t lineLen = 0;
@@ -59,6 +63,17 @@ static void applyJson(const char* line) {
     time_t local = (time_t)t[0].as<uint32_t>() + (int32_t)t[1].as<int32_t>();
     struct tm lt; gmtime_r(&local, &lt);
     M5.Rtc.setDateTime(lt);
+    return;
+  }
+
+  // {"cmd":"owner","name":"Mango"} — keep the user's name for the greeting.
+  const char* cmd = doc["cmd"];
+  if (cmd && strcmp(cmd, "owner") == 0) {
+    const char* nm = doc["name"];
+    if (nm) {
+      strncpy(ownerName, nm, sizeof(ownerName) - 1);
+      ownerName[sizeof(ownerName) - 1] = 0;
+    }
     return;
   }
 
@@ -166,16 +181,60 @@ static void sendPermission(const char* id, const char* decision) {
 
 // ---------- sound ------------------------------------------------------------
 // M5.Speaker (CoreS3: AW88298 over I2S). tone(hz, ms) is non-blocking.
-static void soundPrompt() {
-  M5.Speaker.tone(880, 80);   delay(90);
-  M5.Speaker.tone(1320, 140);
+//
+// Per-tool chime palette: each tool category gets its own two-note motif
+// so you can identify what's being requested by ear alone. The default
+// ascending A5→E6 stays for unknown tools.
+//
+// A global mute flag (flip-to-mute via IMU, see imuPoll) short-circuits
+// every sound function — when muted the device is still fully functional
+// visually, just silent.
+
+extern bool isMuted();   // defined below in the IMU section
+
+static bool toolPrefix(const char *tool, const char *pfx) {
+    if (!tool) return false;
+    size_t n = strlen(pfx);
+    for (size_t i = 0; i < n; i++) {
+        char c = tool[i];
+        if (c == 0) return false;
+        // Case-insensitive for robustness against "Bash" vs "bash".
+        char a = (c >= 'A' && c <= 'Z') ? c + 32 : c;
+        char b = (pfx[i] >= 'A' && pfx[i] <= 'Z') ? pfx[i] + 32 : pfx[i];
+        if (a != b) return false;
+    }
+    return true;
 }
+
+static void soundPrompt() {
+  if (isMuted()) return;
+  // Pick tones based on snap.promptTool so different tools sound different.
+  // Rule of thumb: dangerous tools get a LOW first tone (heavy attention),
+  // read-only/benign tools get a HIGH first tone (light touch).
+  const char *tool = snap.promptTool;
+  uint16_t a = 880, b = 1320;                         // default (Bash / other)
+  if      (toolPrefix(tool, "Bash"))       { a = 540;  b = 820; }   // deep, cautious
+  else if (toolPrefix(tool, "Write"))      { a = 620;  b = 990; }   // firm
+  else if (toolPrefix(tool, "Edit") ||
+           toolPrefix(tool, "MultiEdit") ||
+           toolPrefix(tool, "NotebookEdit")) { a = 740;  b = 1100; } // middle
+  else if (toolPrefix(tool, "Read") ||
+           toolPrefix(tool, "Glob") ||
+           toolPrefix(tool, "Grep"))       { a = 1050; b = 1400; }  // gentle
+  else if (toolPrefix(tool, "WebFetch") ||
+           toolPrefix(tool, "WebSearch"))  { a = 820;  b = 1240; }  // airy
+  M5.Speaker.tone(a, 80);  delay(90);
+  M5.Speaker.tone(b, 140);
+}
+
 static void soundAllow() {
+  if (isMuted()) return;
   M5.Speaker.tone(660, 70);   delay(80);
   M5.Speaker.tone(880, 70);   delay(80);
   M5.Speaker.tone(1320, 120);
 }
 static void soundDeny() {
+  if (isMuted()) return;
   M5.Speaker.tone(300, 140);  delay(150);
   M5.Speaker.tone(200, 180);
 }
@@ -194,17 +253,26 @@ static Persona derivePersona() {
   return P_IDLE;                                                  // connected but nothing to do
 }
 
-// ---------- IMU motion wake --------------------------------------------------
+// ---------- IMU motion wake + flip-to-mute ----------------------------------
 // Screen brightens when the device is picked up, tilted, or bumped;
-// dims after 30s of stillness. Bypassed while a prompt is pending so the
-// user doesn't miss an approval window.
+// dims after 30s of stillness. Bypassed while a prompt is pending.
+//
+// Flipping the CoreS3 face-down (accel Z < -0.7g for 600 ms) toggles a
+// mute flag — all subsequent sound*() calls turn into no-ops. A small
+// 🔇 indicator appears on the header when muted.
 static uint32_t lastMotionMs = 0;
 static float    lastAccMag   = 0;
 static uint8_t  currentBrightness = 200;
+static bool     muteFlag      = false;
+static uint32_t faceDownStartMs = 0;
 
-static constexpr uint32_t IDLE_DIM_MS  = 30000;
-static constexpr uint8_t  BRIGHT_AWAKE = 200;
-static constexpr uint8_t  BRIGHT_DIM   = 40;
+static constexpr uint32_t IDLE_DIM_MS    = 30000;
+static constexpr uint8_t  BRIGHT_AWAKE   = 200;
+static constexpr uint8_t  BRIGHT_DIM     = 40;
+static constexpr uint32_t FLIP_HOLD_MS   = 600;      // must stay flipped this long
+static constexpr float    FLIP_Z_THRESH  = -0.7f;    // face-down accel Z
+
+bool isMuted() { return muteFlag; }
 
 static void imuPoll() {
   if (M5.Imu.update()) {
@@ -212,6 +280,27 @@ static void imuPoll() {
     float mag = sqrtf(d.accel.x*d.accel.x + d.accel.y*d.accel.y + d.accel.z*d.accel.z);
     if (fabsf(mag - lastAccMag) > 0.08f) lastMotionMs = millis();
     lastAccMag = mag;
+
+    // Flip-to-mute detection: accel Z is +1g face-up, -1g face-down.
+    float z = d.accel.z;
+    uint32_t now = millis();
+    if (z < FLIP_Z_THRESH) {
+      if (faceDownStartMs == 0) faceDownStartMs = now;
+      if ((now - faceDownStartMs) > FLIP_HOLD_MS) {
+        // Latched flip — toggle once per flip session.
+        static uint32_t lastToggleMs = 0;
+        if (now - lastToggleMs > 2000) {            // debounce between toggles
+          muteFlag = !muteFlag;
+          lastToggleMs = now;
+          Serial.printf("[mute] %s (flip)\n", muteFlag ? "ON" : "OFF");
+          // Chirp only when un-muting so the user gets feedback but the
+          // mute gesture itself stays silent.
+          if (!muteFlag) M5.Speaker.tone(1200, 60);
+        }
+      }
+    } else {
+      faceDownStartMs = 0;
+    }
   }
 
   bool hasPrompt = snap.promptId[0];
@@ -260,7 +349,30 @@ static void drawHeaderInto(M5Canvas& d) {
   d.setTextDatum(middle_left);
   d.drawString("Claude Buddy", 8, HEADER_H/2);
 
+  // Clock in the middle of the header. Only shown once the RTC has been
+  // set from a {"time":[...]} frame — before that, the RTC holds its last
+  // coin-cell value which would be off by hours. Cheap test: year >= 2024.
+  auto dt = M5.Rtc.getDateTime();
+  if (dt.date.year >= 2024) {
+    char clk[8];
+    snprintf(clk, sizeof(clk), "%02u:%02u", dt.time.hours, dt.time.minutes);
+    d.setTextDatum(middle_center);
+    d.setTextColor(0xE71Cu);         // soft cyan-grey
+    d.drawString(clk, SW/2, HEADER_H/2);
+  }
+
   d.setTextDatum(middle_right);
+  // Mute badge just left of the BLE status. Small crossed speaker icon
+  // made of rectangles — not Unicode (GFX font has no 🔇).
+  int mxRight = SW - 8;
+  if (isMuted()) {
+    int mx = mxRight - 56;         // leave room for sig text
+    int my = HEADER_H/2;
+    d.fillRect(mx, my - 4, 3, 8, TFT_RED);            // speaker body
+    d.fillTriangle(mx + 3, my - 6, mx + 3, my + 6, mx + 10, my, TFT_RED);
+    d.drawLine(mx + 1, my - 8, mx + 12, my + 8, TFT_RED);  // slash
+  }
+
   const char* sig; uint16_t col;
   if (!bleConnected())    { sig = "advert"; col = TFT_ORANGE; }
   else if (!bleSecure())  { sig = "paired"; col = TFT_YELLOW; }
@@ -346,7 +458,14 @@ static void drawIdleScreen(Persona p, uint32_t now) {
     snprintf(line, sizeof(line), "total    %u", snap.total);
     frame.drawString(line, rx, ry + 40);
 
-    frame.setTextColor(0x9CD3);
+    // Colour the token count to match the bar tier — so you notice the
+    // warning even without staring at the fill ratio. Thresholds match
+    // drawTokenBarInto: <60% soft, 60-85% amber, >=85% red.
+    uint32_t pct = snap.tokensToday > 1000000 ? 100 : (snap.tokensToday / 10000);
+    uint16_t tokCol = (pct < 60) ? 0x9CD3u
+                   : (pct < 85) ? TFT_YELLOW
+                                : TFT_RED;
+    frame.setTextColor(tokCol);
     snprintf(line, sizeof(line), "%lu tokens", (unsigned long)snap.tokensToday);
     frame.drawString(line, rx, ry + 65);
     drawTokenBarInto(frame, rx, ry + 85, SW - rx - 10, 10, snap.tokensToday);
@@ -371,17 +490,29 @@ static void drawIdleScreen(Persona p, uint32_t now) {
       frame.drawString(buf, 6, 148);
     }
   } else {
-    // Big-font status line in the lower half
+    // Big-font status line in the lower half. When we know the user's
+    // name and nothing's actively happening, use a personalised greeting
+    // instead of a bare "ready" / "idle".
     frame.setTextDatum(middle_center);
     frame.setTextFont(4);
     frame.setTextColor(0xBDF7);
-    const char* status;
-    if (snap.promptId[0])     status = "awaiting approval";
-    else if (snap.waiting)    status = "waiting";
-    else if (snap.running)    status = "working";
-    else if (!bleSecure())    status = "waiting for claude";
-    else if (snap.total == 0) status = "idle";
-    else                      status = "ready";
+    char buf[48];
+    const char* status = buf;
+    if (snap.promptId[0]) {
+      status = "awaiting approval";
+    } else if (snap.waiting) {
+      status = "waiting";
+    } else if (snap.running) {
+      status = "working";
+    } else if (!bleSecure()) {
+      status = "waiting for claude";
+    } else if (ownerName[0]) {
+      snprintf(buf, sizeof(buf), "hi %s", ownerName);
+    } else if (snap.total == 0) {
+      status = "idle";
+    } else {
+      status = "ready";
+    }
     frame.drawString(status, SW/2, 180);
   }
 
@@ -566,6 +697,12 @@ static void pumpSerialDebug() {
         bleClearBonds();
         Serial.println("[dbg] bonds cleared — unpair on desktop and re-pair");
         break;
+      case 'b': {
+        BuddyKind next = (BuddyKind)((buddyGetKind() + 1) % BUDDY_COUNT);
+        buddySetKind(next);
+        Serial.printf("[dbg] buddy → %s\n", buddyKindName(next));
+        break;
+      }
     }
   }
 }
