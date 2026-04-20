@@ -14,13 +14,30 @@ Each device gets its own subdirectory with a self-contained build.
 
 | Folder | Hardware | Form factor | Status |
 |---|---|---|---|
-| [`cores3/`](cores3/) | **M5Stack CoreS3** — 2.0″ 320×240 touchscreen + speaker + IMU | Desktop device, ~¥500 | ✅ **Stable v1.0** |
+| [`cores3/`](cores3/) | **M5Stack CoreS3** — 2.0″ 320×240 touchscreen + speaker + IMU | Desktop device, ~¥500 | ✅ **v0.5 polished** — 8 species, clock, greeting, per-tool chimes, flip-to-mute |
 | [`atoms3r-echo/`](atoms3r-echo/) | **M5Stack AtomS3R + Atom Echo Base** — 0.85″ 128×128, 1 button, speaker + mic | Magnetic monitor-edge clip, ~¥150 | ✅ **v0.1 verified** |
 | [`zectrix-note4/`](zectrix-note4/) | **ZecTrix Note 4** — 4.2″ e-paper 400×300, 3 buttons, speaker + mic | Always-on desk dashboard | 🟡 **v0.2 partial (paused)** — BLE + EPD + buttons verified, audio WIP |
 
 The focus going forward is the **M5 family** (CoreS3, AtomS3R) because M5Stack's hardware is open, schematics are public, PlatformIO board packages are official, and the Arduino library (`M5Unified`) hides most peripheral bring-up. ZecTrix Note 4 works for the core BLE + display + buttons path but bringing up its custom ES8311 audio path took longer than the feature was worth; that port is paused and anyone interested is welcome to pick it up.
 
 Pick the matching folder, `cd` in, and follow the README there.
+
+---
+
+## CoreS3 at a glance (v0.5)
+
+The CoreS3 build is the one that gets day-to-day polish. Things it does that the upstream reference firmware doesn't:
+
+- **8 pet species** you cycle through by double-tapping the left half of the screen — cat, owl, duck, penguin, rabbit, dragon, ghost, robot. The switched-to species flashes its name big for 1.5 s so you see what you landed on. Crown x-offset is calibrated per species so flowers sit on the actual head midpoint of each pet.
+- **State-coloured flower crown** — wilted grey when sleeping, cherry pink when idle, bright orange when Claude is busy. Hidden during the ATTENTION state so the pet's own alert animation isn't fighting with the crown for attention.
+- **Header clock** — `HH:MM` once the RTC is synced from a `{"time":[...]}` heartbeat.
+- **Owner greeting** — when Claude sends `{"cmd":"owner","name":"Mango"}`, the idle status line becomes `hi Mango`.
+- **Token counter colour matches budget tier** — soft grey / amber / red as you approach the 1 M daily cap, so budget pressure is visible without reading the number.
+- **Per-tool prompt chime** — Bash deep 540→820 Hz, Edit/Write mid, Read/Glob/Grep airy 1050→1400 Hz, WebFetch middle 820→1240 Hz. You can tell what's being asked for by ear alone, without looking at the screen.
+- **Flip-to-mute** — hold the CoreS3 face-down for 600 ms to toggle a global mute flag. A red crossed-speaker icon appears in the header. Latched per flip, so leaving it upside-down on the desk doesn't retrigger.
+- **Pet + heartbeat + touch at 10 Hz in a PSRAM double buffer**, no redraw flicker.
+
+See [`cores3/README.md`](cores3/README.md) for the full feature list, wire protocol, architecture notes, and debug hotkeys.
 
 ---
 
@@ -43,24 +60,24 @@ Every port derives the same four device states from the heartbeat, but renders t
 
 | State | Trigger | CoreS3 | AtomS3R | Note 4 |
 |---|---|---|---|---|
-| **Sleep** | No snapshot in 30 s | Cat curled up, Zzz, wilted crown | Screen off / dim grey | `OFFLINE` label |
-| **Idle** | Connected, nothing to do | Cat blinking, pink crown | Soft green fill | `READY` label |
-| **Busy** | `running > 0` | Cat paw-tapping, orange crown | Yellow + `R:N` | `WORKING` label |
-| **Attention** | Prompt or `waiting > 0` | Cat alert + red flickering crown | Red fill + tool name | `ATTENTION` + tool + hint |
+| **Sleep** | No snapshot in 30 s | Pet curled up, Zzz, wilted crown | Screen off / dim grey | `OFFLINE` label |
+| **Idle** | Connected, nothing to do | Pet blinking, pink crown, "hi Name" | Soft green fill | `READY` label |
+| **Busy** | `running > 0` | Pet paw-tapping, orange crown | Yellow + `R:N` | `WORKING` label |
+| **Attention** | Prompt or `waiting > 0` | Pet alert + jitter + "!", **no crown** (pet owns the alert) | Red fill + tool name | `ATTENTION` + tool + hint |
 
 ### Input mapping
 
-| Port | Allow | Deny |
-|---|---|---|
-| CoreS3 | Tap right touch zone | Tap left touch zone |
-| AtomS3R | Short press (≤500 ms) | Long press (≥600 ms) |
-| Note 4 | Front button short click (<2.5 s) | Front button hold ≥2.5 s |
+| Port | Allow | Deny | Pet switch |
+|---|---|---|---|
+| CoreS3 | Tap right touch zone | Tap left touch zone | **Double-tap left half** to cycle species |
+| AtomS3R | Short press (≤500 ms) | Long press (≥600 ms) | — |
+| Note 4 | Front button short click (<2.5 s) | Front button hold ≥2.5 s | — |
 
 ### Audio feedback
 
 | Port | Supported |
 |---|---|
-| CoreS3 | ✅ M5.Speaker on built-in AW88298 — prompt chime, allow chord, deny thud |
+| CoreS3 | ✅ M5.Speaker on built-in AW88298 — **per-tool prompt chime** (Bash deep, Read airy, etc.), allow chord, deny thud, flip-to-mute |
 | AtomS3R | ✅ via Atom Echo Base (NS4168) — same chime palette as CoreS3 |
 | Note 4 | 🟡 ES8311 bring-up in progress, no confirmed audio yet |
 
@@ -115,7 +132,8 @@ PRs welcome. Keep ports focused on one device family; don't try to make one bina
 
 ## Releases
 
-- **v0.4** — current. Three ports, CoreS3 and AtomS3R hardware-verified end-to-end; Note 4 BLE + display + buttons verified, audio paused.
+- **v0.5** — current. CoreS3 polish pass: 8 species with double-tap cycle, state-coloured flower crown (hidden in attention), header clock, owner greeting, per-tool chimes, flip-to-mute. AtomS3R + Note 4 unchanged from v0.4.
+- **v0.4** — three ports, CoreS3 and AtomS3R hardware-verified end-to-end; Note 4 BLE + display + buttons verified, audio paused.
 - **v0.3** — Note 4 scaffold added.
 - **v0.2** — AtomS3R port added.
 - **v0.1** — CoreS3 port first commit.
