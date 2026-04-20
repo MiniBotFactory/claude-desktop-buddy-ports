@@ -152,19 +152,29 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
 static int gap_event(struct ble_gap_event *event, void *arg);
 
 // ---- Advertising ------------------------------------------------------------
+// The BLE 4.x adv packet is capped at 31 bytes. Our full NUS UUID128 plus
+// a 17-char name plus flags + tx_power would be ~43 bytes. So we split:
+//   Primary adv packet: flags + 128-bit service UUID
+//   Scan response:     device name + tx power
+// Desktop scanners read both and stitch them back together, so Hardware
+// Buddy still sees "Claude Note4 XXXX" advertising the NUS UUID.
 static void advertise(void) {
-    struct ble_hs_adv_fields fields = {0};
-    fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    fields.tx_pwr_lvl_is_present = 1;
-    fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-    fields.name = (uint8_t *)s_name;
-    fields.name_len = strlen(s_name);
-    fields.name_is_complete = 1;
-    fields.uuids128 = (ble_uuid128_t *)&NUS_SVC_UUID;
-    fields.num_uuids128 = 1;
-    fields.uuids128_is_complete = 1;
-    int rc = ble_gap_adv_set_fields(&fields);
+    struct ble_hs_adv_fields adv = {0};
+    adv.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+    adv.uuids128 = (ble_uuid128_t *)&NUS_SVC_UUID;
+    adv.num_uuids128 = 1;
+    adv.uuids128_is_complete = 1;
+    int rc = ble_gap_adv_set_fields(&adv);
     if (rc != 0) { ESP_LOGW(TAG, "adv_set_fields rc=%d", rc); return; }
+
+    struct ble_hs_adv_fields rsp = {0};
+    rsp.name = (uint8_t *)s_name;
+    rsp.name_len = strlen(s_name);
+    rsp.name_is_complete = 1;
+    rsp.tx_pwr_lvl_is_present = 1;
+    rsp.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+    rc = ble_gap_adv_rsp_set_fields(&rsp);
+    if (rc != 0) { ESP_LOGW(TAG, "adv_rsp_set_fields rc=%d", rc); return; }
 
     struct ble_gap_adv_params adv_params = {0};
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;

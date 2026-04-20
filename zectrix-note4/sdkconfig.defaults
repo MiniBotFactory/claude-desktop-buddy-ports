@@ -31,3 +31,12 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
 # --- Log level at runtime (info, not debug) ---
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# --- Console: route ESP_LOGI / printf through the built-in USB Serial JTAG
+# peripheral, which is what the Note 4's USB-C physically talks to. Without
+# this, console goes to UART0 physical pins that aren't wired to the
+# connector, and `pio device monitor` sees nothing. ---
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+# Reboot on double-tap RESET to help recover if USB goes dead
+CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=y

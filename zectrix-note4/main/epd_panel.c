@@ -113,6 +113,25 @@ static inline void pack_1bpp(uint8_t in, uint8_t *out0, uint8_t *out1) {
 }
 
 // ---------- Public API ------------------------------------------------------
+// Panel wake-up: power on + reset pulse + OTP init. Must run before every
+// refresh because epd_turn_on_display() drops the power rail at the end.
+static void epd_wake_and_init(void) {
+    epd_power_on();
+    vTaskDelay(pdMS_TO_TICKS(10));
+    set_rst(1); vTaskDelay(pdMS_TO_TICKS(10));
+    set_rst(0); vTaskDelay(pdMS_TO_TICKS(20));
+    set_rst(1); vTaskDelay(pdMS_TO_TICKS(10));
+    read_busy();
+
+    // SSD2683 OTP init sequence — copied from ZecTrix driver.
+    epd_send_cmd(0x00);
+    epd_send_data(0x2F);
+    epd_send_data(0x2E);
+    epd_send_cmd(0xE9);
+    epd_send_data(0x01);
+    read_busy();
+}
+
 esp_err_t epd_init(void) {
     // GPIOs
     gpio_config_t gc = {
@@ -138,7 +157,7 @@ esp_err_t epd_init(void) {
     set_dc(1);
     set_rst(1);
 
-    // SPI bus + device
+    // SPI bus + device (once; bus stays up across refreshes)
     if (!s_bus_inited) {
         spi_bus_config_t bus = {
             .mosi_io_num = EPD_MOSI_PIN,
@@ -162,21 +181,9 @@ esp_err_t epd_init(void) {
         s_bus_inited = true;
     }
 
-    // Power on, reset pulse, OTP init
-    epd_power_on();
-    vTaskDelay(pdMS_TO_TICKS(10));
-    set_rst(1); vTaskDelay(pdMS_TO_TICKS(10));
-    set_rst(0); vTaskDelay(pdMS_TO_TICKS(20));
-    set_rst(1); vTaskDelay(pdMS_TO_TICKS(10));
-    read_busy();
-
-    // Init sequence from the reference driver (SSD2683 OTP init).
-    epd_send_cmd(0x00);
-    epd_send_data(0x2F);
-    epd_send_data(0x2E);
-    epd_send_cmd(0xE9);
-    epd_send_data(0x01);
-    read_busy();
+    // Power up the panel for the first time so the boot splash can draw.
+    // Every subsequent epd_full_refresh() re-wakes the panel internally.
+    epd_wake_and_init();
 
     ESP_LOGI(TAG, "EPD initialized (%dx%d)", EPD_WIDTH, EPD_HEIGHT);
     return ESP_OK;
@@ -205,6 +212,12 @@ static void epd_turn_on_display(void) {
 
 void epd_full_refresh(const uint8_t *fb) {
     if (!fb) return;
+
+    // Re-wake the panel. epd_turn_on_display() at the end of the previous
+    // refresh dropped the rail, so commands won't land until we power back
+    // on and re-init. This mirrors the upstream driver's EPD_Init()+Display()
+    // cycle.
+    epd_wake_and_init();
 
     // Temperature compensation — sample internal sensor, pick an 0xE6 value
     // based on the result. Matches the upstream table.
