@@ -7,3 +7,8 @@ reference/
 # Generated ESP-IDF sdkconfig (derived from sdkconfig.defaults)
 zectrix-note4/sdkconfig.*
 !zectrix-note4/sdkconfig.defaults
+
+# ESP-IDF Component Manager downloads these automatically during build;
+# pinned via dependencies.lock which IS checked in.
+zectrix-note4/managed_components/
+zectrix-note4/dependencies.lock
