@@ -148,6 +148,9 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
     { 0 }
 };
 
+// Forward-declared because advertise() passes it to ble_gap_adv_start.
+static int gap_event(struct ble_gap_event *event, void *arg);
+
 // ---- Advertising ------------------------------------------------------------
 static void advertise(void) {
     struct ble_hs_adv_fields fields = {0};

@@ -3,3 +3,7 @@
 .DS_Store
 reference/
 .claude/
+
+# Generated ESP-IDF sdkconfig (derived from sdkconfig.defaults)
+zectrix-note4/sdkconfig.*
+!zectrix-note4/sdkconfig.defaults
