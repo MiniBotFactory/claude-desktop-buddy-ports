@@ -101,7 +101,7 @@ static const CrownStyle CROWN_STYLES[4] = {
 //   robot "[____]"        head cols 3..8   → col 5.5 → offset +6
 static int crownXOffset(void) {
   switch (buddyGetKind()) {
-    case BUDDY_OWL:     return 18;
+    case BUDDY_OWL:     return 6;     // was 18 — owl head cols are 3-8 (centre 5.5), not 3-10
     case BUDDY_DUCK:    return -6;
     case BUDDY_RABBIT:  return 12;
     case BUDDY_DRAGON:  return 6;
