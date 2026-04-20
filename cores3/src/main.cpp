@@ -281,25 +281,25 @@ static void imuPoll() {
     if (fabsf(mag - lastAccMag) > 0.08f) lastMotionMs = millis();
     lastAccMag = mag;
 
-    // Flip-to-mute detection: accel Z is +1g face-up, -1g face-down.
+    // Flip-to-mute: accel Z is +1g face-up, -1g face-down. Each face-down
+    // session may toggle mute exactly once (latched). User has to flip
+    // back to face-up before another toggle can happen. Without the latch,
+    // leaving the device upside down triggers a toggle every 2 seconds.
+    static bool flipLatched = false;
     float z = d.accel.z;
     uint32_t now = millis();
     if (z < FLIP_Z_THRESH) {
       if (faceDownStartMs == 0) faceDownStartMs = now;
-      if ((now - faceDownStartMs) > FLIP_HOLD_MS) {
-        // Latched flip — toggle once per flip session.
-        static uint32_t lastToggleMs = 0;
-        if (now - lastToggleMs > 2000) {            // debounce between toggles
-          muteFlag = !muteFlag;
-          lastToggleMs = now;
-          Serial.printf("[mute] %s (flip)\n", muteFlag ? "ON" : "OFF");
-          // Chirp only when un-muting so the user gets feedback but the
-          // mute gesture itself stays silent.
-          if (!muteFlag) M5.Speaker.tone(1200, 60);
-        }
+      if (!flipLatched && (now - faceDownStartMs) > FLIP_HOLD_MS) {
+        muteFlag = !muteFlag;
+        flipLatched = true;
+        Serial.printf("[mute] %s (flip)\n", muteFlag ? "ON" : "OFF");
+        // Chirp only when un-muting so the mute gesture itself stays silent.
+        if (!muteFlag) M5.Speaker.tone(1200, 60);
       }
     } else {
       faceDownStartMs = 0;
+      flipLatched = false;                          // ready for next flip
     }
   }
 
