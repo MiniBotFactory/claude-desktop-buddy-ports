@@ -186,6 +186,35 @@ static void uiInit() {
   frameReady = frame.getBuffer() != nullptr;
 }
 
+// Dedicated pairing screen — shown when the BLE stack has an active
+// 6-digit passkey. Uses font 4 because font 7 (nice big 7-segment digits)
+// is too wide: 6 digits × 27 px = 162 px, won't fit 128-wide screen.
+static void drawPairing(uint32_t pk) {
+  if (!frameReady) return;
+  frame.fillSprite(TFT_BLACK);
+
+  // Title
+  frame.setTextColor(0xFFE0);           // amber
+  frame.setTextDatum(top_center);
+  frame.setTextFont(2);
+  frame.drawString("Pairing", SW/2, 4);
+
+  // 6-digit passkey, big, centre
+  char buf[8]; snprintf(buf, sizeof(buf), "%06lu", (unsigned long)pk);
+  frame.setTextColor(TFT_CYAN);
+  frame.setTextDatum(middle_center);
+  frame.setTextFont(4);                 // ~14 px/char → 84 px, fits 128
+  frame.drawString(buf, SW/2, SH/2);
+
+  // Short hint
+  frame.setTextColor(0x9CD3);
+  frame.setTextFont(1);
+  frame.setTextDatum(bottom_center);
+  frame.drawString("type on desktop", SW/2, SH - 4);
+
+  frame.pushSprite(0, 0);
+}
+
 static void drawIdle(Persona p, uint32_t now) {
   if (!frameReady) return;
   uint16_t bg = personaColor(p, now);
@@ -431,12 +460,15 @@ void loop() {
     }
   }
 
-  // Render ~20 Hz so the red pulse and hold bar feel smooth
+  // Render ~20 Hz so the red pulse and hold bar feel smooth.
+  // Priority: pairing passkey > prompt > idle.
   static uint32_t lastDraw = 0;
   if (millis() - lastDraw > 50) {
     lastDraw = millis();
-    if (hasPrompt) drawPrompt(millis(), holdProgressPct());
-    else           drawIdle(derivePersona(), millis());
+    uint32_t pk = blePasskey();
+    if (pk)             drawPairing(pk);
+    else if (hasPrompt) drawPrompt(millis(), holdProgressPct());
+    else                drawIdle(derivePersona(), millis());
   }
 
   delay(5);
