@@ -30,19 +30,47 @@ static bool                    s_ready = false;
 #define SAMPLE_RATE 16000
 
 static esp_err_t init_power(void) {
-    // Bring up the audio rail — ES8311 and NS4168 are both downstream of
-    // AUDIO_PWR_PIN (GPIO 42). Reference config says force high.
+    // Power sequence matches the ZecTrix reference firmware:
+    //   1. VBAT_PWR_PIN (GPIO 17) high     — main 3V3 rail for EVERYTHING
+    //   2. AUDIO_PWR_PIN (GPIO 42) high   — downstream gate for ES8311+NS4168
+    //   3. AUDIO_PA_PIN  (GPIO 46) low    — amp stays off until we emit
+    //
+    // We previously only drove AUDIO_PWR high without VBAT, so the ES8311
+    // stayed cold and every I2C write timed out. Use gpio_hold_en so the
+    // level survives light/deep sleep transitions.
     gpio_config_t c = {
-        .pin_bit_mask = (1ULL << AUDIO_PWR_PIN) | (1ULL << AUDIO_PA_PIN),
+        .pin_bit_mask = (1ULL << VBAT_PWR_PIN)
+                      | (1ULL << AUDIO_PWR_PIN)
+                      | (1ULL << AUDIO_PA_PIN),
         .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
     };
     gpio_config(&c);
+
+    gpio_hold_dis(VBAT_PWR_PIN);
+    gpio_set_level(VBAT_PWR_PIN, 1);
+    gpio_hold_en(VBAT_PWR_PIN);
+
+    gpio_hold_dis(AUDIO_PWR_PIN);
     gpio_set_level(AUDIO_PWR_PIN, 1);
-    gpio_set_level(AUDIO_PA_PIN, 0);       // PA off until we have audio
-    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_hold_en(AUDIO_PWR_PIN);
+
+    gpio_set_level(AUDIO_PA_PIN, 0);
+
+    // ES8311 needs ~25 ms after power to respond to I2C. Give it a bit more
+    // to be safe — we're doing this once at boot, the delay is irrelevant.
+    vTaskDelay(pdMS_TO_TICKS(50));
     return ESP_OK;
+}
+
+// Drive the NS4168 amplifier's shutdown pin active/inactive. The PA pin
+// passed to esp_codec_dev isn't actually toggled by the codec driver —
+// the ZecTrix reference firmware manages it manually, so we do too.
+static void pa_enable(bool on) {
+    gpio_hold_dis(AUDIO_PA_PIN);
+    gpio_set_level(AUDIO_PA_PIN, on ? 1 : 0);
+    gpio_hold_en(AUDIO_PA_PIN);
 }
 
 static esp_err_t init_i2c(void) {
@@ -138,11 +166,62 @@ static esp_err_t init_codec(void) {
     return ESP_OK;
 }
 
+// Probe the I2C bus by trying to talk to the ES8311 address. This is a
+// blind write of zero bytes — ACK means the device is alive.
+static esp_err_t probe_codec(void) {
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address  = AUDIO_ES8311_ADDR,
+        .scl_speed_hz    = 100000,
+    };
+    i2c_master_dev_handle_t dev = NULL;
+    esp_err_t err = i2c_master_bus_add_device(s_i2c_bus, &dev_cfg, &dev);
+    if (err != ESP_OK) return err;
+    err = i2c_master_probe(s_i2c_bus, AUDIO_ES8311_ADDR, 50);
+    i2c_master_bus_rm_device(dev);
+    return err;
+}
+
+// Scan the full 7-bit I2C address range; log every address that ACKs.
+// Invaluable when the codec "isn't there" — we find out what IS there.
+static void scan_i2c_bus(void) {
+    ESP_LOGI(TAG, "I2C scan on SDA=%d SCL=%d:", AUDIO_I2C_SDA, AUDIO_I2C_SCL);
+    int found = 0;
+    for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+        if (i2c_master_probe(s_i2c_bus, addr, 10) == ESP_OK) {
+            ESP_LOGI(TAG, "  0x%02X ACK", addr);
+            found++;
+        }
+    }
+    if (!found) ESP_LOGW(TAG, "  no devices ACK'd — power or wiring");
+}
+
 esp_err_t speaker_init(void) {
     esp_err_t err;
     err = init_power(); if (err != ESP_OK) { ESP_LOGW(TAG, "power fail 0x%x", err); return err; }
     err = init_i2c();   if (err != ESP_OK) { ESP_LOGW(TAG, "i2c fail 0x%x", err);   return err; }
+
+    // IMPORTANT: ES8311 ignores I2C until MCLK is actually running. We
+    // must bring the I2S channel up first so MCLK = 256 * 16 kHz streams
+    // into the codec's pin 2. If we probe/open the codec before MCLK,
+    // every I2C write times out with "Fail to write to dev 18".
     err = init_i2s();   if (err != ESP_OK) { ESP_LOGW(TAG, "i2s fail 0x%x", err);   return err; }
+
+    // Give the clocks + AVDD rail a moment to settle before talking.
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    // Diagnostic: scan so we know WHICH devices are on the bus.
+    scan_i2c_bus();
+
+    err = probe_codec();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "ES8311 probe at 0x%02X failed (0x%x). "
+                      "Likely power-on sequence or wrong pins.",
+                      AUDIO_ES8311_ADDR, err);
+        return err;
+    }
+    ESP_LOGI(TAG, "ES8311 ACK'd at 0x%02X", AUDIO_ES8311_ADDR);
+
     err = init_codec(); if (err != ESP_OK) { ESP_LOGW(TAG, "codec fail 0x%x", err); return err; }
     s_ready = true;
     ESP_LOGI(TAG, "ready (ES8311, 16 kHz mono)");
@@ -168,7 +247,8 @@ void speaker_tone(uint16_t freq_hz, uint16_t duration_ms) {
     size_t nsamples = (size_t)SAMPLE_RATE * duration_ms / 1000;
     if (nsamples == 0) return;
 
-    // Work in 256-sample chunks so we don't need a giant buffer.
+    pa_enable(true);                        // unmute the NS4168 before audio
+
     static int16_t chunk[256];
     fill_square(chunk, 256, freq_hz);
 
@@ -179,6 +259,10 @@ void speaker_tone(uint16_t freq_hz, uint16_t duration_ms) {
         esp_codec_dev_write(s_dev, chunk, n * sizeof(int16_t));
         written += n;
     }
+
+    // Keep PA on between back-to-back tones; individual ding/deny/allow
+    // functions call speaker_tone in sequence so constantly toggling would
+    // click. We turn PA off on quiet (handled by caller via speaker_mute).
 }
 
 void speaker_ding(void) {
