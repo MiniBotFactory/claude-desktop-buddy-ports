@@ -28,13 +28,25 @@ Instead of a pet, the whole 4.2" is the status surface: big `READY / WORKING / A
 
 This port uses **ESP-IDF** via PlatformIO (the other ports use Arduino — Note 4 needs the raw IDF for NimBLE and the SSD2683 SPI driver).
 
+> ⚠️ **Python 3.12 required.** ESP-IDF's `idf-component-manager` depends on `pydantic-core`, which has no pre-built wheels for Python 3.14 as of this writing. If `pio --version` says it's running on 3.13+, reinstall via pipx on 3.12:
+> ```bash
+> brew uninstall platformio
+> pipx install --python /opt/homebrew/bin/python3.12 platformio
+> ```
+
 ```bash
 cd zectrix-note4
 pio run -t upload
 pio device monitor
 ```
 
-First build will pull the ESP-IDF toolchain (~500 MB) — takes a few minutes. Subsequent builds < 20 s.
+First build will pull the ESP-IDF toolchain (~500 MB) + a Python venv with `pydantic`/`idf-component-manager`/etc. (~100 MB). Takes 3–5 minutes on a warm network. Subsequent builds under 30 s.
+
+Expected size after link:
+```
+RAM:   8.2% (27 KB / 320 KB)
+Flash: 14.0% (586 KB / 4 MB)
+```
 
 ### Entering the bootloader
 
