@@ -1,94 +1,112 @@
-// Three-button HAL — simple polling + debouncing, no interrupts.
+// Three-button HAL — interrupt-driven so button events survive the e-paper
+// full-refresh blocking window (~1.5 s per frame). Polling-only handling
+// would miss any click that started and released during a refresh.
 //
-// Design model (matches the AtomS3R port's UX):
-//   * confirm short click → Allow (fast path)
-//   * confirm long-press  → Deny (2 second hold, with live progress ui)
-//   * up short click      → cycle dashboard pages (not wired in v0.1)
-//   * down short click    → same
-//   * down long-press     → power off intent (up-stream decides)
+// We record the press timestamp in an ISR on falling edge, and the
+// release timestamp on rising edge. buttons_poll() compares the two,
+// decides click vs long press vs cancel, and emits at most one event per
+// call. Long press is emitted on the ISR too (via the poll window checking
+// `held >= LONG_MIN_MS` while still pressed).
 
 #include "buttons.h"
 #include "config.h"
 
 #include <driver/gpio.h>
 #include <esp_timer.h>
+#include <esp_attr.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
 #define DEBOUNCE_MS  30
-#define CLICK_MAX_MS 500
+#define CLICK_MAX_MS 700       // was 500 — give the user a little slack
 #define LONG_MIN_MS  1200
 
 typedef struct {
     gpio_num_t gpio;
-    bool       pressed;
-    uint32_t   press_start_ms;
-    bool       long_emitted;
+    volatile uint32_t press_ms;     // last press timestamp (0 = not pressed)
+    volatile uint32_t release_ms;   // last release timestamp
+    volatile bool     long_emitted; // once per press
+    btn_event_t       click_evt;
+    btn_event_t       long_evt;
 } btn_t;
 
-static btn_t s_confirm, s_up, s_down;
+static btn_t s_btns[3];
+static bool s_isr_service_installed = false;
 
 static inline uint32_t now_ms(void) {
     return (uint32_t)(esp_timer_get_time() / 1000ULL);
 }
 
-static inline bool read_pressed(gpio_num_t g) {
-    // Buttons are active-low, pull-up. Pressed = level 0.
-    return gpio_get_level(g) == 0;
+static void IRAM_ATTR btn_isr(void *arg) {
+    btn_t *b = (btn_t *)arg;
+    bool pressed = (gpio_get_level(b->gpio) == 0);
+    uint32_t t = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    if (pressed) {
+        b->press_ms = t;
+        b->release_ms = 0;
+        b->long_emitted = false;
+    } else {
+        b->release_ms = t;
+    }
 }
 
-static void setup_pin(gpio_num_t g) {
+static void setup_btn(btn_t *b, gpio_num_t g,
+                      btn_event_t click_evt, btn_event_t long_evt) {
+    b->gpio = g;
+    b->press_ms = 0;
+    b->release_ms = 0;
+    b->long_emitted = false;
+    b->click_evt = click_evt;
+    b->long_evt = long_evt;
+
     gpio_config_t c = {
         .pin_bit_mask = 1ULL << g,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,
     };
     gpio_config(&c);
+    gpio_isr_handler_add(g, btn_isr, b);
 }
 
 void buttons_init(void) {
-    setup_pin(BTN_CONFIRM_GPIO);
-    setup_pin(BTN_UP_GPIO);
-    setup_pin(BTN_DOWN_GPIO);
-    s_confirm = (btn_t){ BTN_CONFIRM_GPIO, false, 0, false };
-    s_up      = (btn_t){ BTN_UP_GPIO,      false, 0, false };
-    s_down    = (btn_t){ BTN_DOWN_GPIO,    false, 0, false };
+    if (!s_isr_service_installed) {
+        gpio_install_isr_service(0);
+        s_isr_service_installed = true;
+    }
+    setup_btn(&s_btns[0], BTN_CONFIRM_GPIO, BTN_CONFIRM_CLICK, BTN_CONFIRM_LONG);
+    setup_btn(&s_btns[1], BTN_UP_GPIO,      BTN_UP_CLICK,      BTN_UP_LONG);
+    setup_btn(&s_btns[2], BTN_DOWN_GPIO,    BTN_DOWN_CLICK,    BTN_DOWN_LONG);
 }
 
-// Internal: update one button state + emit event via *out when something
-// just happened. Returns true if an event was produced.
-static bool tick(btn_t *b, btn_event_t click_evt, btn_event_t long_evt,
-                 btn_event_t *out) {
+// Look at a single button's latched timestamps and decide whether to
+// emit a click/long event. Returns true and writes `*out` if something
+// fires. Called once per poll per button.
+static bool check_one(btn_t *b, btn_event_t *out) {
     uint32_t t = now_ms();
-    bool pressed = read_pressed(b->gpio);
+    // Snapshot volatiles so the ISR can't change them mid-decision.
+    uint32_t press   = b->press_ms;
+    uint32_t release = b->release_ms;
+    bool long_done   = b->long_emitted;
 
-    if (pressed && !b->pressed) {
-        // Rising edge → record start, debounce
-        b->press_start_ms = t;
-        b->pressed = true;
-        b->long_emitted = false;
-        return false;
-    }
-
-    if (pressed && b->pressed) {
-        // Still held — check long threshold
-        if (!b->long_emitted && (t - b->press_start_ms) >= LONG_MIN_MS) {
+    // Long-press fires while still held past the threshold.
+    if (press != 0 && release == 0 && !long_done) {
+        if ((t - press) >= LONG_MIN_MS) {
             b->long_emitted = true;
-            *out = long_evt;
+            *out = b->long_evt;
             return true;
         }
-        return false;
     }
 
-    if (!pressed && b->pressed) {
-        // Released — decide click or nothing
-        b->pressed = false;
-        uint32_t held = t - b->press_start_ms;
-        if (held < DEBOUNCE_MS) return false;
-        if (!b->long_emitted && held <= CLICK_MAX_MS) {
-            *out = click_evt;
+    // Click fires on release if it was a short hold.
+    if (press != 0 && release != 0) {
+        uint32_t held = release - press;
+        // Clear the press window so we don't re-fire.
+        b->press_ms = 0;
+        b->release_ms = 0;
+        if (!long_done && held >= DEBOUNCE_MS && held <= CLICK_MAX_MS) {
+            *out = b->click_evt;
             return true;
         }
     }
@@ -97,16 +115,18 @@ static bool tick(btn_t *b, btn_event_t click_evt, btn_event_t long_evt,
 
 btn_event_t buttons_poll(void) {
     btn_event_t e = BTN_EVT_NONE;
-    if (tick(&s_confirm, BTN_CONFIRM_CLICK, BTN_CONFIRM_LONG, &e)) return e;
-    if (tick(&s_up,      BTN_UP_CLICK,      BTN_UP_LONG,      &e)) return e;
-    if (tick(&s_down,    BTN_DOWN_CLICK,    BTN_DOWN_LONG,    &e)) return e;
+    for (int i = 0; i < 3; i++) {
+        if (check_one(&s_btns[i], &e)) return e;
+    }
     return BTN_EVT_NONE;
 }
 
-bool buttons_confirm_held(void) { return s_confirm.pressed; }
+bool buttons_confirm_held(void) {
+    return s_btns[0].press_ms != 0 && s_btns[0].release_ms == 0;
+}
 
 uint32_t buttons_confirm_hold_ms(void) {
-    if (!s_confirm.pressed) return 0;
-    uint32_t t = now_ms();
-    return t - s_confirm.press_start_ms;
+    uint32_t press = s_btns[0].press_ms;
+    if (press == 0 || s_btns[0].release_ms != 0) return 0;
+    return now_ms() - press;
 }
