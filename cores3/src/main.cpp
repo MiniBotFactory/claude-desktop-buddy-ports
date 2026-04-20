@@ -341,7 +341,11 @@ static void uiInit() {
   frame.createSprite(SW, SH);
   petCanvas.setPsram(false);
   petCanvas.setColorDepth(16);
-  petCanvas.createSprite(150, 96);
+  // Pet canvas is a bit taller than the pose itself (80 px) so the pet has
+  // some breathing room above and below when centred; a pushSprite position
+  // below header + a bit of margin makes the pet look vertically placed
+  // instead of jammed against the header.
+  petCanvas.createSprite(150, 108);
   frameReady = frame.getBuffer() != nullptr && petCanvas.getBuffer() != nullptr;
 }
 
@@ -442,7 +446,7 @@ static void drawIdleScreen(Persona p, uint32_t now) {
   // Pet region: draw cat into its own sprite, then push at (4, 30)
   petCanvas.fillSprite(TFT_BLACK);
   catDrawFrame(&petCanvas, p, now);
-  petCanvas.pushSprite(&frame, 4, 30);
+  petCanvas.pushSprite(&frame, 4, 32);
 
   // Flash the buddy name briefly after the user double-taps to switch.
   if (millis() < buddyNameFlashUntil) {
@@ -560,7 +564,7 @@ static void drawPromptScreen(Persona p, uint32_t now) {
   // cat perks up and the crown turns urgent red.
   petCanvas.fillSprite(TFT_BLACK);
   catDrawFrame(&petCanvas, p, now);
-  petCanvas.pushSprite(&frame, 4, 30);
+  petCanvas.pushSprite(&frame, 4, 32);
 
   // Right panel (160..320, 30..140): tool name + hint, replacing stats
   const int rx = 160, ry = 36;
@@ -621,14 +625,17 @@ static void drawPromptScreen(Persona p, uint32_t now) {
 // can bind (drawIdleScreen reads it).
 uint32_t buddyNameFlashUntil = 0;
 
-// Idle touch: double-tap the pet region (x < 160, y 28..140) to cycle to
-// the next buddy species. Single taps are ignored so you can swipe past
-// the pet without accidentally changing it.
+// Idle touch: double-tap the LEFT half of the screen (comfortably larger
+// than the pet canvas itself — the pet is only ~150x108 but the user
+// should be able to slap anywhere on the left side and have it register).
+// Single taps are ignored so you can swipe past the pet without
+// accidentally changing it.
 static void handleIdleTouch() {
   auto t = M5.Touch.getDetail();
   if (!t.wasPressed()) return;
-  // Pet rectangle from drawIdleScreen
-  if (t.x < 0 || t.x > 160 || t.y < 28 || t.y > 140) return;
+  // Left half of the screen, below header (y>=24), above the divider +
+  // some slop to catch finger drift.
+  if (t.x > 180 || t.y < 24 || t.y > 150) return;
 
   static uint32_t lastTapMs = 0;
   uint32_t now = millis();
