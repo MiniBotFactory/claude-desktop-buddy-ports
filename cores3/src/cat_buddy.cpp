@@ -15,6 +15,21 @@ static constexpr uint16_t CAT_YEL   = 0xFFE0;
 static constexpr uint16_t CAT_WHITE = 0xFFFF;
 
 // Print a 5-row 12-col ASCII sprite centered in the canvas, with optional
+// Vertical layout inside the 150x108 pet canvas:
+//   y=[0..CROWN_Y_BASE..)   empty gap above crown
+//   y=[CROWN_Y_BASE..+10]   flower crown (~10 px tall)
+//   y=[POSE_Y_BASE..+80]    5-row ASCII pose (textSize 2 → 16 px/row)
+//   y=[POSE_Y_BASE+80..108] small slack below pose
+//
+// Pose pushed all the way to canvas bottom so the pet's feet sit on the
+// divider rather than floating halfway up. Crown is placed just above the
+// pose head so ear/hat pixels in pose row 0 never punch through the crown.
+// Particles (Z's, "!" marks, "..." dots) are co-located with the pose, so
+// particle() auto-applies POSE_Y_BASE — species code can keep its original
+// upstream y values that assumed a top-aligned pose.
+static constexpr int POSE_Y_BASE  = 28;   // pose row 0 y
+static constexpr int CROWN_Y_BASE = 14;   // crown glyph row y (just above pose)
+
 // x/y pixel offsets for jitter / bob effects.
 static void drawPose(M5Canvas* c, const char* const* lines, uint16_t color,
                      int xOff = 0, int yOff = 0) {
@@ -25,7 +40,7 @@ static void drawPose(M5Canvas* c, const char* const* lines, uint16_t color,
   const int rows = 5;
   for (int r = 0; r < rows; r++) {
     int x = xOff;
-    int y = yOff + r * charH;
+    int y = POSE_Y_BASE + yOff + r * charH;
     c->setCursor(x, y);
     c->print(lines[r]);
   }
@@ -35,7 +50,9 @@ static void particle(M5Canvas* c, int x, int y, const char* s, uint16_t color) {
   c->setTextColor(color);
   c->setTextSize(2);
   c->setTextFont(1);
-  c->setCursor(x, y);
+  // particles follow the pose so their relative y (as written in each
+  // species, often taken from upstream) stays correct.
+  c->setCursor(x, POSE_Y_BASE + y);
   c->print(s);
 }
 
@@ -100,7 +117,7 @@ static void drawCrown(M5Canvas* c, uint32_t t, Persona p) {
     } else {
       c->setTextSize(2);
     }
-    int y = bob + (IS_FLOWER[i] ? 0 : 2);
+    int y = CROWN_Y_BASE + bob + (IS_FLOWER[i] ? 0 : 2);
     c->setCursor(24 + i * 18, y);
     char str[2] = { GLYPH[i], 0 };
     c->print(str);
