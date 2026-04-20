@@ -114,6 +114,12 @@ static int crownXOffset(void) {
 }
 
 static void drawCrown(M5Canvas* c, uint32_t t, Persona p) {
+  // ATTENTION is the "someone needs to approve right now" state. The pet's
+  // own urgent animation (alert eyes, jitter, '!' marks) is the signal —
+  // layering the rainbow crown on top makes the screen busy and pulls the
+  // eye away from the pet's body language. Keep the crown for the calm
+  // personas only.
+  if (p == P_ATTENTION) return;
   const CrownStyle& s = CROWN_STYLES[p];
 
   static const char GLYPH[5]     = { '*', 'v', '*', 'v', '*' };
