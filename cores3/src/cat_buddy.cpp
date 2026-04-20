@@ -232,6 +232,281 @@ static void doAttention(M5Canvas* c, uint32_t t) {
 } // namespace owl
 
 // ============================================================================
+// Duck buddy — adapted from upstream src/buddies/duck.cpp. Yellow.
+// ============================================================================
+namespace duck {
+static constexpr uint16_t BODY = 0xFFE0;
+static void doSleep(M5Canvas* c, uint32_t t) {
+  static const char* const TUCK[5]    = { "            ", "            ", "    __      ", "  <(-_)_)   ", " ~~~~~~~~~~ " };
+  static const char* const BREATHE[5] = { "            ", "    __      ", "  <(-_)_)   ", "  ~~~~~~~~  ", "   ~~~~~~   " };
+  static const char* const DREAM[5]   = { "            ", "    __      ", "  <(uu)_)   ", " ~~~~~~~~~~ ", "  ~~~~~~~~  " };
+  const char* const* seq[] = { TUCK, BREATHE, DREAM, BREATHE, TUCK, BREATHE };
+  drawPose(c, seq[(t / 800) % 6], BODY);
+  int p = (t / 200) % 10;
+  particle(c, 110 + p, 16 - p, "z", CAT_DIM);
+  particle(c, 120 + p/2, 8 - p/2, "Z", CAT_WHITE);
+}
+static void doIdle(M5Canvas* c, uint32_t t) {
+  static const char* const REST[5]    = { "            ", "    __      ", "  <(o )___  ", "   (  ._>   ", "    `--'    " };
+  static const char* const LOOK_L[5]  = { "            ", "    __      ", " <<(o )___  ", "   (  ._>   ", "    `--'    " };
+  static const char* const LOOK_R[5]  = { "            ", "    __      ", "  <( o)___  ", "   (  ._>   ", "    `--'    " };
+  static const char* const BLINK[5]   = { "            ", "    __      ", "  <(- )___  ", "   (  ._>   ", "    `--'    " };
+  const char* const* seq[] = { REST, REST, BLINK, REST, LOOK_L, REST, LOOK_R, REST, BLINK, REST };
+  drawPose(c, seq[(t / 700) % 10], BODY);
+  drawCrown(c, t, P_IDLE);
+}
+static void doBusy(M5Canvas* c, uint32_t t) {
+  static const char* const PADDLE_A[5] = { "            ", "    __      ", "  <(o )___  ", "   (  ._>   ", "  ~ `--'    " };
+  static const char* const PADDLE_B[5] = { "            ", "    __      ", "  <(o )___  ", "   (  ._>   ", "    `--' ~  " };
+  static const char* const THINK[5]    = { "      ?     ", "    __      ", "  <(o )___  ", "   (  ._>   ", "    `--'    " };
+  const char* const* seq[] = { PADDLE_A, PADDLE_B, PADDLE_A, PADDLE_B, THINK, PADDLE_A };
+  drawPose(c, seq[(t / 400) % 6], BODY);
+  drawCrown(c, t, P_BUSY);
+}
+static void doAttention(M5Canvas* c, uint32_t t) {
+  static const char* const ALERT[5]   = { "    __      ", "  <(O )     ", "  (    )___ ", "   (  ._>   ", "    `--'    " };
+  static const char* const SCAN_L[5]  = { "    __      ", " <<(O )     ", "  (    )___ ", "   (  ._>   ", "    `--'    " };
+  static const char* const SCAN_R[5]  = { "    __      ", "  <( O)     ", "  (    )___ ", "   (  ._>   ", "    `--'    " };
+  static const char* const HONK[5]    = { "    __      ", "  <O(O )    ", "  (    )___ ", "   (  ._>   ", "    `--'    " };
+  const char* const* seq[] = { ALERT, SCAN_L, ALERT, SCAN_R, HONK, ALERT };
+  int jitter = (t / 100) & 1 ? 1 : -1;
+  drawPose(c, seq[(t / 300) % 6], BODY, jitter);
+  if ((t / 200) & 1) particle(c, 50, -4, "!", CAT_YEL);
+  if ((t / 300) & 1) particle(c, 78, -4, "!", CAT_YEL);
+  drawCrown(c, t, P_ATTENTION);
+}
+} // namespace duck
+
+// ============================================================================
+// Penguin buddy — cyan, formal
+// ============================================================================
+namespace penguin {
+static constexpr uint16_t BODY = 0x041F;
+static void doSleep(M5Canvas* c, uint32_t t) {
+  static const char* const TUCK[5]   = { "            ", "   .---.    ", "  ( -- )    ", "  (_____)   ", "   ~~~~~    " };
+  static const char* const SNORE[5]  = { "    o O .   ", "   .---.    ", "  ( __ )    ", "  (_____)   ", "   =====    " };
+  static const char* const TIPPED[5] = { "            ", "            ", "  .-----.   ", " ( zz   )=> ", "  `~~~~~`   " };
+  const char* const* seq[] = { TUCK, TUCK, SNORE, TIPPED, SNORE, TUCK };
+  drawPose(c, seq[(t / 800) % 6], BODY);
+  int p = (t / 200) % 10;
+  particle(c, 110 + p, 16 - p, "z", 0x07FFu);
+  particle(c, 120 + p/2, 8 - p/2, "Z", CAT_WHITE);
+}
+static void doIdle(M5Canvas* c, uint32_t t) {
+  static const char* const STAND[5]  = { "   .---.    ", "  ( o>o )   ", " /(     )\\  ", "  `-----`   ", "   J   L    " };
+  static const char* const WAD_L[5]  = { "   .---.    ", "  ( o>o )   ", "/(     )    ", "  `-----`   ", "  J    L    " };
+  static const char* const WAD_R[5]  = { "   .---.    ", "  ( o>o )   ", " (     )\\   ", "  `-----`   ", "   J    L   " };
+  static const char* const BLINK[5]  = { "   .---.    ", "  ( ->- )   ", " /(     )\\  ", "  `-----`   ", "   J   L    " };
+  const char* const* seq[] = { STAND, WAD_L, STAND, WAD_R, STAND, BLINK, STAND, WAD_L, STAND, WAD_R };
+  drawPose(c, seq[(t / 700) % 10], BODY);
+  drawCrown(c, t, P_IDLE);
+}
+static void doBusy(M5Canvas* c, uint32_t t) {
+  static const char* const TYPE_A[5] = { "   .---.    ", "  ( v>v )   ", " /(     )\\  ", " /`-----`\\  ", "   J   L    " };
+  static const char* const TYPE_B[5] = { "   .---.    ", "  ( v>v )   ", " \\(     )/  ", " \\`-----`/  ", "   J   L    " };
+  static const char* const THINK[5]  = { "      ?     ", "   .---.    ", "  ( ^>^ )   ", " /(  .  )\\  ", "   J   L    " };
+  const char* const* seq[] = { TYPE_A, TYPE_B, TYPE_A, TYPE_B, THINK, TYPE_A };
+  drawPose(c, seq[(t / 400) % 6], BODY);
+  drawCrown(c, t, P_BUSY);
+}
+static void doAttention(M5Canvas* c, uint32_t t) {
+  static const char* const ALERT[5]  = { "   .---.    ", "  ( O>O )   ", " /(     )\\  ", "  `-----`   ", "   J   L    " };
+  static const char* const SCAN_L[5] = { "   .---.    ", "  (O> O )   ", " /(     )\\  ", "  `-----`   ", "   J   L    " };
+  static const char* const SCAN_R[5] = { "   .---.    ", "  ( O >O)   ", " /(     )\\  ", "  `-----`   ", "   J   L    " };
+  static const char* const TENSE[5]  = { "  /.---.\\   ", " /( O>O )\\  ", "//(     )\\\\ ", "  `-----`   ", "  J     L   " };
+  const char* const* seq[] = { ALERT, SCAN_L, ALERT, SCAN_R, TENSE, ALERT };
+  int jitter = (t / 100) & 1 ? 1 : -1;
+  drawPose(c, seq[(t / 300) % 6], BODY, jitter);
+  if ((t / 200) & 1) particle(c, 50, -4, "!", CAT_YEL);
+  if ((t / 300) & 1) particle(c, 78, -4, "!", CAT_YEL);
+  drawCrown(c, t, P_ATTENTION);
+}
+} // namespace penguin
+
+// ============================================================================
+// Rabbit buddy — white with long ears
+// ============================================================================
+namespace rabbit {
+static constexpr uint16_t BODY = 0xFFFFu;
+static void doSleep(M5Canvas* c, uint32_t t) {
+  static const char* const CURL[5]    = { "            ", "    (\\_/)   ", "   ( -.- )  ", "  (zzz___)  ", "   `\"\"\"\"`   " };
+  static const char* const BREATHE[5] = { "            ", "    (\\_/)   ", "   ( -_- )  ", "  (___zz_)  ", "   `\"\"\"\"`   " };
+  static const char* const DREAM[5]   = { "            ", "    (\\_/)   ", "   ( u.u )  ", "  (___oo_)  ", "   `\"\"\"\"`   " };
+  const char* const* seq[] = { CURL, BREATHE, CURL, BREATHE, DREAM, BREATHE };
+  drawPose(c, seq[(t / 800) % 6], BODY);
+  int p = (t / 200) % 10;
+  particle(c, 110 + p, 16 - p, "z", CAT_DIM);
+  particle(c, 120 + p/2, 8 - p/2, "Z", CAT_WHITE);
+}
+static void doIdle(M5Canvas* c, uint32_t t) {
+  static const char* const REST[5]   = { "    (\\_/)   ", "   ( o o )  ", "  =(  v  )= ", "   (\")_(\")  ", "            " };
+  static const char* const LOOK_L[5] = { "    (\\_/)   ", "   (o  o )  ", "  =(  v  )= ", "   (\")_(\")  ", "            " };
+  static const char* const LOOK_R[5] = { "    (\\_/)   ", "   ( o  o)  ", "  =(  v  )= ", "   (\")_(\")  ", "            " };
+  static const char* const BLINK[5]  = { "    (\\_/)   ", "   ( - - )  ", "  =(  v  )= ", "   (\")_(\")  ", "            " };
+  const char* const* seq[] = { REST, REST, BLINK, REST, LOOK_L, REST, LOOK_R, REST, BLINK, REST };
+  drawPose(c, seq[(t / 700) % 10], BODY);
+  drawCrown(c, t, P_IDLE);
+}
+static void doBusy(M5Canvas* c, uint32_t t) {
+  static const char* const DIG_A[5]  = { "    (\\_/)   ", "   ( v v )  ", "  =(  v  )= ", "  /(\")_(\")\\ ", "  ~~~~~~~~  " };
+  static const char* const DIG_B[5]  = { "    (\\_/)   ", "   ( v v )  ", "  =(  v  )= ", "  \\(\")_(\")/  ", "  ~~~~~~~~  " };
+  static const char* const THINK[5]  = { "  ? (\\_/)   ", "   ( o o )  ", "  =(  v  )= ", "   (\")_(\")  ", "            " };
+  const char* const* seq[] = { DIG_A, DIG_B, DIG_A, DIG_B, THINK, DIG_A };
+  drawPose(c, seq[(t / 400) % 6], BODY);
+  drawCrown(c, t, P_BUSY);
+}
+static void doAttention(M5Canvas* c, uint32_t t) {
+  static const char* const ALERT[5]  = { "   /|  |\\   ", "  /(\\_/)\\   ", "  ( O  O )  ", "  =(  v  )= ", "   (\")_(\")  " };
+  static const char* const SCAN_L[5] = { "   /|  |\\   ", "  /(\\_/)\\   ", "  (O   O )  ", "  =(  v  )= ", "   (\")_(\")  " };
+  static const char* const SCAN_R[5] = { "   /|  |\\   ", "  /(\\_/)\\   ", "  ( O   O)  ", "  =(  v  )= ", "   (\")_(\")  " };
+  static const char* const HUSH[5]   = { "   /|  |\\   ", "   (\\_/)    ", "  ( o  o )  ", "  =(  .  )= ", "   (\")_(\")  " };
+  const char* const* seq[] = { ALERT, SCAN_L, ALERT, SCAN_R, HUSH, ALERT };
+  int jitter = (t / 100) & 1 ? 1 : -1;
+  drawPose(c, seq[(t / 300) % 6], BODY, jitter);
+  if ((t / 200) & 1) particle(c, 50, -4, "!", CAT_YEL);
+  if ((t / 300) & 1) particle(c, 78, -4, "!", CAT_YEL);
+  drawCrown(c, t, P_ATTENTION);
+}
+} // namespace rabbit
+
+// ============================================================================
+// Dragon buddy — red, mythical
+// ============================================================================
+namespace dragon {
+static constexpr uint16_t BODY = 0xF800u;
+static void doSleep(M5Canvas* c, uint32_t t) {
+  static const char* const CURL[5]   = { "            ", "            ", "   _____    ", "  (--   )~  ", "  `vvvvv'   " };
+  static const char* const BREATH[5] = { "            ", "            ", "   _____    ", "  (--   )~~ ", "  `vvvvv'   " };
+  static const char* const PUFF[5]   = { "            ", "       o    ", "   _____    ", "  (--   )~~ ", "  `vvvvv'   " };
+  const char* const* seq[] = { CURL, BREATH, CURL, PUFF, BREATH, CURL };
+  drawPose(c, seq[(t / 800) % 6], BODY);
+  int p = (t / 200) % 10;
+  particle(c, 110 + p, 16 - p, "z", CAT_DIM);
+  particle(c, 120 + p/2, 8 - p/2, "Z", CAT_WHITE);
+}
+static void doIdle(M5Canvas* c, uint32_t t) {
+  static const char* const PROUD[5]  = { "            ", "  /^\\  /^\\  ", " <  o    o >", " (   ww   ) ", "  `-vvvv-'  " };
+  static const char* const BLINK[5]  = { "            ", "  /^\\  /^\\  ", " <  -    - >", " (   ww   ) ", "  `-vvvv-'  " };
+  static const char* const WING_U[5] = { "  /^\\  /^\\  ", "  \\_/  \\_/  ", " <  o    o >", " (   ww   ) ", "  `-vvvv-'  " };
+  static const char* const WING_D[5] = { "            ", "  \\v/  \\v/  ", " <  o    o >", " (   ww   ) ", "  `-vvvv-'  " };
+  const char* const* seq[] = { PROUD, PROUD, WING_U, WING_D, PROUD, BLINK, PROUD, WING_U, WING_D, PROUD };
+  drawPose(c, seq[(t / 700) % 10], BODY);
+  drawCrown(c, t, P_IDLE);
+}
+static void doBusy(M5Canvas* c, uint32_t t) {
+  static const char* const COUNT_A[5] = { "    $$$$    ", "  /^\\  /^\\  ", " <  v    v >", " (   --   ) ", " /`-vvvv-'\\ " };
+  static const char* const COUNT_B[5] = { "    $$$$    ", "  /^\\  /^\\  ", " <  v    v >", " (   __   ) ", " \\`-vvvv-'/ " };
+  static const char* const PONDER[5]  = { "      ?     ", "  /^\\  /^\\  ", " <  ^    ^ >", " (   ..   ) ", "  `-vvvv-'  " };
+  const char* const* seq[] = { COUNT_A, COUNT_B, COUNT_A, COUNT_B, PONDER, COUNT_A };
+  drawPose(c, seq[(t / 400) % 6], BODY);
+  drawCrown(c, t, P_BUSY);
+}
+static void doAttention(M5Canvas* c, uint32_t t) {
+  static const char* const ROAR[5]   = { "    ^  ^    ", " /^^\\  /^^\\ ", "<  O    O  >", " (   <>   ) ", "  `-vvvv-'  " };
+  static const char* const FLAME[5]  = { "  ~~~  ~~~  ", " /^^\\  /^^\\ ", "<  O    O  >", " (   <>   )~", "  `-vvvv-'  " };
+  static const char* const SCAN_L[5] = { "    ^  ^    ", " /^^\\  /^^\\ ", "< O      O >", " (   O    ) ", "  `-vvvv-'  " };
+  static const char* const HISS[5]   = { "    ^  ^    ", " /^^\\  /^^\\ ", "<  o    o  >", " (   ss   ) ", "  `-vvvv-'  " };
+  const char* const* seq[] = { ROAR, FLAME, ROAR, SCAN_L, HISS, ROAR };
+  int jitter = (t / 100) & 1 ? 1 : -1;
+  drawPose(c, seq[(t / 300) % 6], BODY, jitter);
+  if ((t / 200) & 1) particle(c, 50, -4, "!", CAT_YEL);
+  if ((t / 300) & 1) particle(c, 78, -4, "!", CAT_YEL);
+  drawCrown(c, t, P_ATTENTION);
+}
+} // namespace dragon
+
+// ============================================================================
+// Ghost buddy — white/translucent
+// ============================================================================
+namespace ghost {
+static constexpr uint16_t BODY = 0xFFFFu;
+static void doSleep(M5Canvas* c, uint32_t t) {
+  static const char* const DRIFT[5]   = { "            ", "   .----.   ", "  ( -    - )", "  |        |", "  ~`~``~`~  " };
+  static const char* const FADE[5]    = { "            ", "   . -- .   ", "  ( -    - )", "  .        .", "  . . . . . " };
+  const char* const* seq[] = { DRIFT, DRIFT, FADE, DRIFT, FADE, DRIFT };
+  drawPose(c, seq[(t / 800) % 6], BODY);
+  int p = (t / 200) % 10;
+  particle(c, 110 + p, 16 - p, "z", CAT_DIM);
+  particle(c, 120 + p/2, 8 - p/2, "Z", CAT_WHITE);
+}
+static void doIdle(M5Canvas* c, uint32_t t) {
+  static const char* const HOVER[5]  = { "            ", "   .----.   ", "  ( O    O )", "  |   u    |", "  `~`~~`~`  " };
+  static const char* const LOOK_L[5] = { "            ", "   .----.   ", "  (O      O)", "  |   u    |", "  `~`~~`~`  " };
+  static const char* const LOOK_R[5] = { "            ", "   .----.   ", "  ( O    O )", "  |    u   |", "  `~`~~`~`  " };
+  static const char* const BLINK[5]  = { "            ", "   .----.   ", "  ( -    - )", "  |   u    |", "  `~`~~`~`  " };
+  const char* const* seq[] = { HOVER, HOVER, BLINK, HOVER, LOOK_L, HOVER, LOOK_R, HOVER, BLINK, HOVER };
+  drawPose(c, seq[(t / 700) % 10], BODY);
+  drawCrown(c, t, P_IDLE);
+}
+static void doBusy(M5Canvas* c, uint32_t t) {
+  static const char* const SPIN_L[5] = { "            ", "   .----.   ", "  (<    >)  ", "  |   w    |", "  `~`~~`~`  " };
+  static const char* const SPIN_R[5] = { "            ", "   .----.   ", "  (>    <)  ", "  |   w    |", "  `~`~~`~`  " };
+  static const char* const THINK[5]  = { "     ?      ", "   .----.   ", "  ( o    o )", "  |   .    |", "  `~`~~`~`  " };
+  const char* const* seq[] = { SPIN_L, SPIN_R, SPIN_L, SPIN_R, THINK, SPIN_L };
+  drawPose(c, seq[(t / 400) % 6], BODY);
+  drawCrown(c, t, P_BUSY);
+}
+static void doAttention(M5Canvas* c, uint32_t t) {
+  static const char* const BOO[5]    = { "            ", "  /.----.\\  ", " /(O    O)\\ ", "|  BOO!    |", " `~`~~`~`~  " };
+  static const char* const SPOOK_L[5]= { "            ", " /.----.    ", " (O     O)  ", " |  O      |", " `~`~~`~`   " };
+  static const char* const SPOOK_R[5]= { "            ", "   .----.\\  ", "  (O     O) ", "  |     O  |", "   `~`~~`~` " };
+  static const char* const WAVE[5]   = { "   ~~~~~~   ", "   .----.   ", "  ( O    O )", "  |   !    |", "  ~~~~~~~~  " };
+  const char* const* seq[] = { BOO, SPOOK_L, BOO, SPOOK_R, WAVE, BOO };
+  int jitter = (t / 100) & 1 ? 1 : -1;
+  drawPose(c, seq[(t / 300) % 6], BODY, jitter);
+  if ((t / 200) & 1) particle(c, 50, -4, "!", CAT_YEL);
+  if ((t / 300) & 1) particle(c, 78, -4, "!", CAT_YEL);
+  drawCrown(c, t, P_ATTENTION);
+}
+} // namespace ghost
+
+// ============================================================================
+// Robot buddy — silver, industrial
+// ============================================================================
+namespace robot {
+static constexpr uint16_t BODY = 0xBDF7u;
+static void doSleep(M5Canvas* c, uint32_t t) {
+  static const char* const STBY[5]   = { "            ", "   [____]   ", "  [      ]  ", "  [  --  ]  ", "   '----'   " };
+  static const char* const BLINK[5]  = { "            ", "   [____]   ", "  [      ]  ", "  [  ..  ]  ", "   '----'   " };
+  static const char* const SAVE[5]   = { "            ", "   [____]   ", "  [ zz   ]  ", "  [  __  ]  ", "   '----'   " };
+  const char* const* seq[] = { STBY, BLINK, SAVE, BLINK, STBY, STBY };
+  drawPose(c, seq[(t / 800) % 6], BODY);
+  int p = (t / 200) % 10;
+  particle(c, 110 + p, 16 - p, "z", CAT_DIM);
+  particle(c, 120 + p/2, 8 - p/2, "Z", CAT_WHITE);
+}
+static void doIdle(M5Canvas* c, uint32_t t) {
+  static const char* const READY[5]  = { "            ", "   [____]   ", "  [ o  o ]  ", "  [  <>  ]  ", "   /----\\   " };
+  static const char* const LOOK_L[5] = { "            ", "   [____]   ", "  [o   o ]  ", "  [  <>  ]  ", "   /----\\   " };
+  static const char* const LOOK_R[5] = { "            ", "   [____]   ", "  [ o   o]  ", "  [  <>  ]  ", "   /----\\   " };
+  static const char* const BLINK[5]  = { "            ", "   [____]   ", "  [ -  - ]  ", "  [  <>  ]  ", "   /----\\   " };
+  const char* const* seq[] = { READY, READY, BLINK, READY, LOOK_L, READY, LOOK_R, READY, BLINK, READY };
+  drawPose(c, seq[(t / 700) % 10], BODY);
+  drawCrown(c, t, P_IDLE);
+}
+static void doBusy(M5Canvas* c, uint32_t t) {
+  static const char* const WORK_A[5] = { "            ", "   [____]   ", "  [ * .* ]  ", "  [ ==== ]  ", "   /----\\   " };
+  static const char* const WORK_B[5] = { "            ", "   [____]   ", "  [ .* * ]  ", "  [ ==== ]  ", "   /----\\   " };
+  static const char* const THINK[5]  = { "    .--.    ", "   [____]   ", "  [ ?  ? ]  ", "  [  <>  ]  ", "   /----\\   " };
+  const char* const* seq[] = { WORK_A, WORK_B, WORK_A, WORK_B, THINK, WORK_A };
+  drawPose(c, seq[(t / 400) % 6], BODY);
+  drawCrown(c, t, P_BUSY);
+}
+static void doAttention(M5Canvas* c, uint32_t t) {
+  static const char* const ALARM[5]  = { "  [!!]  [!!]", "   [____]   ", "  [ OO OO]  ", "  [  !!  ]  ", "   /----\\   " };
+  static const char* const SCAN_L[5] = { "  [!!]      ", "   [____]   ", "  [OO  OO]  ", "  [  !!  ]  ", "   /----\\   " };
+  static const char* const SCAN_R[5] = { "       [!!] ", "   [____]   ", "  [OO  OO]  ", "  [  !!  ]  ", "   /----\\   " };
+  static const char* const HOT[5]    = { "  [!!]  [!!]", "  /[____]\\  ", " /[ XX XX]\\ ", "  [  !!  ]  ", "   /----\\   " };
+  const char* const* seq[] = { ALARM, SCAN_L, ALARM, SCAN_R, HOT, ALARM };
+  int jitter = (t / 100) & 1 ? 1 : -1;
+  drawPose(c, seq[(t / 300) % 6], BODY, jitter);
+  if ((t / 200) & 1) particle(c, 50, -4, "!", CAT_YEL);
+  if ((t / 300) & 1) particle(c, 78, -4, "!", CAT_YEL);
+  drawCrown(c, t, P_ATTENTION);
+}
+} // namespace robot
+
+// ============================================================================
 // Dispatch
 // ============================================================================
 
@@ -245,27 +520,46 @@ BuddyKind buddyGetKind(void) { return g_kind; }
 
 const char *buddyKindName(BuddyKind k) {
   switch (k) {
-    case BUDDY_CAT: return "cat";
-    case BUDDY_OWL: return "owl";
-    default:        return "?";
+    case BUDDY_CAT:     return "cat";
+    case BUDDY_OWL:     return "owl";
+    case BUDDY_DUCK:    return "duck";
+    case BUDDY_PENGUIN: return "penguin";
+    case BUDDY_RABBIT:  return "rabbit";
+    case BUDDY_DRAGON:  return "dragon";
+    case BUDDY_GHOST:   return "ghost";
+    case BUDDY_ROBOT:   return "robot";
+    default:            return "?";
   }
 }
 
+// Macro to call the right species function for each persona.
+#define DISPATCH(ns) do { \
+    switch (p) { \
+      case P_SLEEP:     ns::doSleep(canvas, tickMs); break; \
+      case P_IDLE:      ns::doIdle(canvas, tickMs); break; \
+      case P_BUSY:      ns::doBusy(canvas, tickMs); break; \
+      case P_ATTENTION: ns::doAttention(canvas, tickMs); break; \
+    } \
+  } while (0)
+
 void catDrawFrame(M5Canvas* canvas, Persona p, uint32_t tickMs) {
-  if (g_kind == BUDDY_OWL) {
-    switch (p) {
-      case P_SLEEP:     owl::doSleep(canvas, tickMs); break;
-      case P_IDLE:      owl::doIdle(canvas, tickMs); break;
-      case P_BUSY:      owl::doBusy(canvas, tickMs); break;
-      case P_ATTENTION: owl::doAttention(canvas, tickMs); break;
-    }
-    return;
-  }
-  // Default: cat
-  switch (p) {
-    case P_SLEEP:     doSleep(canvas, tickMs); break;
-    case P_IDLE:      doIdle(canvas, tickMs); break;
-    case P_BUSY:      doBusy(canvas, tickMs); break;
-    case P_ATTENTION: doAttention(canvas, tickMs); break;
+  switch (g_kind) {
+    case BUDDY_OWL:     DISPATCH(owl);     return;
+    case BUDDY_DUCK:    DISPATCH(duck);    return;
+    case BUDDY_PENGUIN: DISPATCH(penguin); return;
+    case BUDDY_RABBIT:  DISPATCH(rabbit);  return;
+    case BUDDY_DRAGON:  DISPATCH(dragon);  return;
+    case BUDDY_GHOST:   DISPATCH(ghost);   return;
+    case BUDDY_ROBOT:   DISPATCH(robot);   return;
+    case BUDDY_CAT:
+    default:
+      // cat functions are in the anonymous top-level scope of this file
+      switch (p) {
+        case P_SLEEP:     doSleep(canvas, tickMs); break;
+        case P_IDLE:      doIdle(canvas, tickMs); break;
+        case P_BUSY:      doBusy(canvas, tickMs); break;
+        case P_ATTENTION: doAttention(canvas, tickMs); break;
+      }
+      return;
   }
 }

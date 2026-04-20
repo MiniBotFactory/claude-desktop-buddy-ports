@@ -50,6 +50,10 @@ static char lastPromptId[48]  = {0};
 // on the idle screen. Empty until the first {"cmd":"owner",...} arrives.
 static char ownerName[32] = {0};
 
+// Forward declaration — defined alongside handleIdleTouch further down.
+// drawIdleScreen reads it to decide whether to overlay the buddy name.
+extern uint32_t buddyNameFlashUntil;
+
 // ---------- BLE RX line assembly --------------------------------------------
 static char   lineBuf[1536];
 static size_t lineLen = 0;
@@ -440,6 +444,17 @@ static void drawIdleScreen(Persona p, uint32_t now) {
   catDrawFrame(&petCanvas, p, now);
   petCanvas.pushSprite(&frame, 4, 30);
 
+  // Flash the buddy name briefly after the user double-taps to switch.
+  if (millis() < buddyNameFlashUntil) {
+    frame.setTextDatum(middle_center);
+    frame.setTextFont(4);
+    frame.setTextColor(TFT_WHITE, 0x18C3);          // white on header-grey
+    const char *name = buddyKindName(buddyGetKind());
+    int w = frame.textWidth(name) + 20;
+    frame.fillRoundRect(80 - w/2, 60, w, 28, 6, 0x18C3);
+    frame.drawString(name, 80, 74);
+  }
+
   // Stats panel on the right (160..320)
   const int rx = 160, ry = 32;
   frame.setTextFont(2);
@@ -600,6 +615,35 @@ static void drawPromptScreen(Persona p, uint32_t now) {
   frame.pushSprite(0, 0);
 }
 
+// Show the buddy's name large on screen for this many ms after the user
+// switches species, so they know which one they landed on without pairing
+// the touch to a list display. Non-static so the forward decl up top
+// can bind (drawIdleScreen reads it).
+uint32_t buddyNameFlashUntil = 0;
+
+// Idle touch: double-tap the pet region (x < 160, y 28..140) to cycle to
+// the next buddy species. Single taps are ignored so you can swipe past
+// the pet without accidentally changing it.
+static void handleIdleTouch() {
+  auto t = M5.Touch.getDetail();
+  if (!t.wasPressed()) return;
+  // Pet rectangle from drawIdleScreen
+  if (t.x < 0 || t.x > 160 || t.y < 28 || t.y > 140) return;
+
+  static uint32_t lastTapMs = 0;
+  uint32_t now = millis();
+  if (lastTapMs != 0 && (now - lastTapMs) < 400) {
+    // Second tap → cycle
+    BuddyKind next = (BuddyKind)((buddyGetKind() + 1) % BUDDY_COUNT);
+    buddySetKind(next);
+    buddyNameFlashUntil = now + 1500;
+    Serial.printf("[buddy] -> %s\n", buddyKindName(next));
+    lastTapMs = 0;
+  } else {
+    lastTapMs = now;
+  }
+}
+
 static bool handlePromptTouch() {
   auto t = M5.Touch.getDetail();
   if (!t.wasPressed()) return false;
@@ -747,6 +791,7 @@ void loop() {
       delay(300);
     }
   } else {
+    handleIdleTouch();
     if (lastHadPrompt || lastPk || millis() - lastDraw > 100) {
       drawIdleScreen(derivePersona(), millis());
       lastDraw = millis();

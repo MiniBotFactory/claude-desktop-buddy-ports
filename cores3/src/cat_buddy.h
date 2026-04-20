@@ -11,7 +11,13 @@ enum Persona : uint8_t {
 
 enum BuddyKind : uint8_t {
   BUDDY_CAT = 0,
-  BUDDY_OWL = 1,
+  BUDDY_OWL,
+  BUDDY_DUCK,
+  BUDDY_PENGUIN,
+  BUDDY_RABBIT,
+  BUDDY_DRAGON,
+  BUDDY_GHOST,
+  BUDDY_ROBOT,
   BUDDY_COUNT,
 };
 
