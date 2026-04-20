@@ -280,6 +280,15 @@ static void drawTokenBarInto(M5Canvas& d, int x, int y, int w, int h, uint32_t t
 // 6-digit passkey to display. Gets the full 320px width so the last digit
 // never falls off screen (the previous split layout truncated it at 5).
 static void drawPairingScreen(uint32_t pk) {
+  // Diagnostic — if this log appears in serial but the screen stays dark,
+  // the issue is in the frame/sprite path, not the loop control flow.
+  static uint32_t lastLogPk = 0;
+  if (pk != lastLogPk) {
+    Serial.printf("[ui] drawPairingScreen pk=%06lu frameReady=%d\n",
+                  (unsigned long)pk, frameReady ? 1 : 0);
+    lastLogPk = pk;
+  }
+
   if (!frameReady) return;
   frame.fillSprite(TFT_BLACK);
   drawHeaderInto(frame);
@@ -287,18 +296,23 @@ static void drawPairingScreen(uint32_t pk) {
   frame.setTextDatum(middle_center);
   frame.setTextFont(4);
   frame.setTextColor(0xFFE0);        // amber title
-  frame.drawString("Pairing", SW/2, 64);
+  frame.drawString("Pairing", SW/2, 56);
 
   char buf[8];
   snprintf(buf, sizeof(buf), "%06lu", (unsigned long)pk);
-  frame.setTextFont(7);              // 7-segment big digits
+
+  // Use font 4 at textSize 2 instead of font 7 — font 7 is a 7-segment
+  // style only available on some M5GFX builds; switching to a plain
+  // scaled font is more portable and nearly as big.
+  frame.setTextFont(4);
+  frame.setTextSize(2);
   frame.setTextColor(TFT_CYAN);
-  frame.drawString(buf, SW/2, 140);  // center across full width
+  frame.drawString(buf, SW/2, 140);
+  frame.setTextSize(1);
 
   frame.setTextFont(2);
   frame.setTextColor(0xBDF7);
-  frame.drawString("Type this passkey on the desktop dialog",
-                   SW/2, 210);
+  frame.drawString("Type this on the desktop dialog", SW/2, 210);
 
   frame.pushSprite(0, 0);
 }
