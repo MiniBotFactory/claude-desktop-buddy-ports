@@ -10,15 +10,17 @@ Open-source hardware companions for [Claude Desktop](https://claude.ai/download)
 
 ## Supported devices
 
-Each device gets its own subdirectory with a self-contained PlatformIO project.
+Each device gets its own subdirectory with a self-contained build.
 
 | Folder | Hardware | Form factor | Status |
 |---|---|---|---|
 | [`cores3/`](cores3/) | **M5Stack CoreS3** — 2.0″ 320×240 touchscreen + speaker + IMU | Desktop device, ~¥500 | ✅ **Stable v1.0** |
 | [`atoms3r-echo/`](atoms3r-echo/) | **M5Stack AtomS3R + Atom Echo Base** — 0.85″ 128×128, 1 button, speaker + mic | Magnetic monitor-edge clip, ~¥150 | ✅ **v0.1 verified** |
-| [`zectrix-note4/`](zectrix-note4/) | **ZecTrix Note 4** — 4.2″ e-paper 400×300 + 3 buttons + speaker + mic | Always-on desk dashboard | ✅ **v0.1.3 verified** |
+| [`zectrix-note4/`](zectrix-note4/) | **ZecTrix Note 4** — 4.2″ e-paper 400×300, 3 buttons, speaker + mic | Always-on desk dashboard | 🟡 **v0.2 partial (paused)** — BLE + EPD + buttons verified, audio WIP |
 
-Pick the one that matches your hardware, `cd` into the folder, and follow the README there.
+The focus going forward is the **M5 family** (CoreS3, AtomS3R) because M5Stack's hardware is open, schematics are public, PlatformIO board packages are official, and the Arduino library (`M5Unified`) hides most peripheral bring-up. ZecTrix Note 4 works for the core BLE + display + buttons path but bringing up its custom ES8311 audio path took longer than the feature was worth; that port is paused and anyone interested is welcome to pick it up.
+
+Pick the matching folder, `cd` in, and follow the README there.
 
 ---
 
@@ -37,14 +39,14 @@ Claude Desktop advertises a BLE Nordic UART Service. Any device that can:
 
 ### Persona model
 
-Every port derives the same four pet/device states from the heartbeat, but renders them according to the hardware's strengths:
+Every port derives the same four device states from the heartbeat, but renders them according to the hardware's strengths:
 
-| State | Trigger | CoreS3 | AtomS3R (planned) |
-|---|---|---|---|
-| **Sleep** | No snapshot in 30 s | Cat curled up, Zzz, wilted crown | Screen off / dim grey |
-| **Idle** | Connected, nothing to do | Cat blinking, pink crown | Soft green fill + counter |
-| **Busy** | `running > 0` | Cat paw-tapping, orange crown | Yellow fill + `running N` |
-| **Attention** | Prompt or `waiting > 0` | Cat alert + red flickering crown | Red fill + tool name, button-to-approve |
+| State | Trigger | CoreS3 | AtomS3R | Note 4 |
+|---|---|---|---|---|
+| **Sleep** | No snapshot in 30 s | Cat curled up, Zzz, wilted crown | Screen off / dim grey | `OFFLINE` label |
+| **Idle** | Connected, nothing to do | Cat blinking, pink crown | Soft green fill | `READY` label |
+| **Busy** | `running > 0` | Cat paw-tapping, orange crown | Yellow + `R:N` | `WORKING` label |
+| **Attention** | Prompt or `waiting > 0` | Cat alert + red flickering crown | Red fill + tool name | `ATTENTION` + tool + hint |
 
 ### Input mapping
 
@@ -52,33 +54,56 @@ Every port derives the same four pet/device states from the heartbeat, but rende
 |---|---|---|
 | CoreS3 | Tap right touch zone | Tap left touch zone |
 | AtomS3R | Short press (≤500 ms) | Long press (≥600 ms) |
+| Note 4 | Front button short click (<2.5 s) | Front button hold ≥2.5 s |
+
+### Audio feedback
+
+| Port | Supported |
+|---|---|
+| CoreS3 | ✅ M5.Speaker on built-in AW88298 — prompt chime, allow chord, deny thud |
+| AtomS3R | ✅ via Atom Echo Base (NS4168) — same chime palette as CoreS3 |
+| Note 4 | 🟡 ES8311 bring-up in progress, no confirmed audio yet |
 
 ---
 
 ## Project philosophy
 
-- **One directory per device.** Each `<device>/` is a complete, independently-buildable PlatformIO project. No shared build system to wrestle with.
-- **Shared code is duplicated, not linked.** The BLE bridge (`ble_bridge.cpp/h`) and JSON parsing logic are copied into each device directory. 180 lines × 2 devices is cheaper than a build-system dance. If a bug is fixed, apply the patch in both directories.
+- **One directory per device.** Each `<device>/` is a complete, independently-buildable project. No shared build system to wrestle with.
+- **Shared code is duplicated, not linked.** The BLE bridge and JSON-parsing logic are copied into each device directory. 180 lines × 3 devices is cheaper than a build-system dance. If a bug is fixed, apply the patch in each directory.
 - **UI is hardware-native.** Don't try to pretend AtomS3R has the same screen as CoreS3 — design to each device's strengths.
-- **The upstream BLE bridge is vendored verbatim.** Anthropic's Arduino BLE code from [anthropics/claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy) is used unchanged — it compiles on any ESP32 variant.
+- **Frameworks chosen per device, not unified.** CoreS3 and AtomS3R use PlatformIO + Arduino (M5Unified handles drivers). Note 4 uses PlatformIO + ESP-IDF + NimBLE because its custom e-paper panel + ES8311 codec need raw IDF, and bringing the Arduino BLE stack into IDF would be worse than the duplication.
+
+---
+
+## Requirements
+
+### Host tooling
+
+- **PlatformIO Core** (or the VS Code extension) — `brew install platformio` on macOS.
+- **Python 3.12.** The Note 4 ESP-IDF path pulls in `idf-component-manager` which depends on `pydantic-core`, and that package has no prebuilt wheels for Python 3.14 as of this writing. The Arduino ports (CoreS3, AtomS3R) are happy with any modern Python.
+- **macOS, Linux, or WSL.** Every port has been exercised on macOS.
+
+### Device tooling
+
+- Just USB-C and a data cable. `pio run -t upload` drives all three devices.
 
 ---
 
 ## Adding a new device
 
-Got an ESP32 board that isn't listed? The protocol requirements are minimal:
+Got an ESP32 variant that isn't listed? The protocol requirements are minimal:
 
 - **Must have**: BLE (so no ESP32-S2), some way to display OR indicate state (screen, LEDs, e-ink), some way to approve/deny (buttons, touch, capacitive pad)
 - **Nice to have**: speaker for audio feedback, IMU for motion wake, PSRAM for smooth double-buffered rendering
 
-Suggested template for adding a port:
+Suggested template:
 
 ```
 <my-device>/
 ├── README.md              # hardware, pinout, build instructions, caveats
 ├── platformio.ini         # board + lib_deps
 ├── no_ota.csv             # partition table (optional)
-└── src/
+└── src/                   # or main/ for ESP-IDF ports
     ├── ble_bridge.cpp     # copy from cores3/src/, unchanged
     ├── ble_bridge.h       # copy from cores3/src/, unchanged
     └── main.cpp           # your UI + input handling
@@ -88,8 +113,20 @@ PRs welcome. Keep ports focused on one device family; don't try to make one bina
 
 ---
 
+## Releases
+
+- **v0.4** — current. Three ports, CoreS3 and AtomS3R hardware-verified end-to-end; Note 4 BLE + display + buttons verified, audio paused.
+- **v0.3** — Note 4 scaffold added.
+- **v0.2** — AtomS3R port added.
+- **v0.1** — CoreS3 port first commit.
+
+See `git tag -l` for the actual tags.
+
+---
+
 ## Credits
 
-- BLE bridge and protocol by [Anthropic](https://github.com/anthropics/claude-desktop-buddy), MIT.
-- Cat ASCII art adapted from the upstream [`cat.cpp`](https://github.com/anthropics/claude-desktop-buddy/blob/main/src/buddies/cat.cpp).
+- BLE bridge and wire protocol by [Anthropic](https://github.com/anthropics/claude-desktop-buddy), MIT.
+- Cat ASCII art adapted from upstream [`cat.cpp`](https://github.com/anthropics/claude-desktop-buddy/blob/main/src/buddies/cat.cpp).
+- ZecTrix Note 4 e-paper driver extracted from the vendor's public SDK ([wiki.zectrix.com/zh/software/opensource](https://wiki.zectrix.com/zh/software/opensource)), LVGL + task infrastructure stripped.
 - Everything else: MIT, do as you wish.

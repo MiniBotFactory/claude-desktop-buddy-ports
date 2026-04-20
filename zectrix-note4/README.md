@@ -2,7 +2,9 @@
 
 The e-paper variant of the Hardware Buddy. Turns a [ZecTrix Note 4](https://wiki.zectrix.com/zh/hardware/intro) "AI 便利贴" into a monochrome dashboard that mirrors Claude Desktop session state and takes Allow/Deny decisions with the device's physical buttons.
 
-> ✅ **v0.1.3 — hardware-verified.** Pairing (6-digit passkey on e-paper), dashboard rendering, full prompt flow (short-click Allow / long-hold Deny) all working on a real Note 4. Known limitations remain in the [TODO list](#todo) — audio, partial refresh, and deep sleep are still unimplemented.
+> 🟡 **v0.2 — partially working (paused).** BLE pairing + e-paper dashboard + short-click Allow / long-hold Deny + partial refresh are all hardware-verified on a real Note 4. **Audio over ES8311 never came up** (the codec doesn't ACK I2C; last attempt added an MCLK-before-I2C ordering + full bus scan, but the root cause isn't the ordering). Deep sleep not started. This port is paused in favour of the better-documented M5 family — see [../atoms3r-echo/](../atoms3r-echo/) for a similar "magnetic clip" form factor that *is* end-to-end working including audio.
+>
+> Anyone picking this up again: the I2C scan in `speaker.c` should tell you whether ES8311 (0x18) is on the bus at all. If it isn't, the problem is almost certainly the audio power rail (`PA_PWR_EN` = GPIO 42 driving the Q3/Q4 power-gate circuit on sheet 1 of the schematic). If it IS on the bus but `esp_codec_dev_open` still fails, you're into codec register init land — compare register-by-register with the upstream ZecTrix `es8311_audio_codec.cc`.
 
 ---
 
